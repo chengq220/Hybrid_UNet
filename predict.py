@@ -64,13 +64,20 @@ def predict(steps=1):
 
 
         #plot the prediction
+        # f = plt.figure()
+        # ax1 = f.add_subplot(1,2,1)
+        # plt.imshow(predMask)
+        # ax1.set_xlabel('Prediction')
+        # ax2 = f.add_subplot(1,2, 2)
+        # plt.imshow(mask)
+        # ax2.set_xlabel('Ground Truth')
+        
         f = plt.figure()
-        ax1 = f.add_subplot(1,2,1)
-        plt.imshow(predMask)
-        ax1.set_xlabel('Prediction')
-        ax2 = f.add_subplot(1,2, 2)
-        plt.imshow(mask)
-        ax2.set_xlabel('Ground Truth')
+        alpha = 0.5
+        plt.imshow(mask,alpha=alpha)
+        plt.imshow(predMask, alpha=alpha, cmap='gray')
+        plt.axis('off')
+
 
         directory = opt.export_folder
         save_loc = str(steps) + "_result.png"
