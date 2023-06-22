@@ -18,9 +18,9 @@ if __name__ == '__main__':
     total_steps = 0
     best_loss = 1 
 
-    run = wandb.init(
-        project="project"
-    )
+    # run = wandb.init(
+    #     project="project"
+    # )
 
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
         epoch_start_time = time.time()
@@ -62,6 +62,6 @@ if __name__ == '__main__':
         if epoch % opt.run_test_freq == 0:
             acc = run_test(epoch)
             writer.plot_acc(acc, epoch)
-        wandb.log({"accuracy": acc ,"loss": loss})
+        # wandb.log({"accuracy": acc ,"loss": loss})
 
     writer.close()

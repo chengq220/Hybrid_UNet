@@ -12,6 +12,7 @@ import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
 import wandb
+import time
 
 
 ###############################################################################
@@ -151,8 +152,6 @@ class HybridUnet(nn.Module):
         self.transfer_data = transfer_data
         self.down_convs = down_convs
         self.up_convs = up_convs
-        self.encoder = None
-        self.decoder = None
         #===========================================================
 
         #trainable parameter to convert mesh back to image
@@ -162,11 +161,12 @@ class HybridUnet(nn.Module):
         #===========================================================
         self.rec_up_conv = nn.ModuleList()
         self.conv = nn.ModuleList()
-        for i in range(len(rec_up_convs)-1):
-            up = rectangular_conv_block(rec_up_convs[i],rec_up_convs[i+1],3)
+        in_channel = self.rec_down_channel[-1] * 2 #times by two because all the edges has the feature of 2 vertices
+        for out_channel in rec_up_convs:
+            up = nn.ConvTranspose2d(in_channel,out_channel,kernel_size=2,stride=2)
             self.rec_up_conv.append(up)
-            conv = nn.ConvTranspose2d(rec_up_convs[i],rec_up_convs[i+1],kernel_size=2,stride=2)
-            self.conv.append(conv)
+            self.conv.append(rectangular_conv_block(in_channel,out_channel,3))
+            in_channel = out_channel
 
         ##output
         self.output = nn.Conv2d(rec_up_convs[-1],output,kernel_size=1,padding="same")
@@ -187,67 +187,151 @@ class HybridUnet(nn.Module):
         #change the channel to the last number
         r_fe = fe.permute(0,2,3,1)
         #create mesh for the batch
+        start_time = time.time()
         for image in r_fe:
             mesh = Mesh(file=image, hold_history=True)
             meshes.append(mesh)
             x.append(mesh.features)
         x = torch.stack(x)
         meshes = np.array(meshes)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print("Create Mesh Elapsed time:", elapsed_time, "seconds")
  
         cty = meshes[0].edges.copy() #creates a deep copy of the input edge connectivity
         self.nedges = len(cty)
-        self.pool_res = [self.nedges]
-        for i in range(len(self.down_convs)):
+        self.pool_res = []
+        for i in range(len(self.down_convs)-1):
             self.nedges = self.nedges//2
             self.pool_res.append(self.nedges)
-        unrolls = self.pool_res[:-1].copy()
-        unrolls.reverse()
-        self.encoder = MeshEncoder(self.rec_down_channel[-1],self.pool_res, self.down_convs, blocks=len(self.pool_res)-1)
-        self.decoder = MeshDecoder(unrolls,self.up_convs, blocks=len(self.pool_res)-1,transfer_data=self.transfer_data)
-        
-        fe, before_pool = self.encoder((x, meshes))
-        fe = self.decoder((fe, meshes), before_pool)
+        unrolls = self.pool_res[:-1]
+        unrolls = unrolls[::-1] + [len(cty)]
+
+        start_time = time.time()
+
+        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, self.pool_res)
+        decoder = MeshDecoder(unrolls,self.up_convs)
+        fe,before_pool = encoder((x,meshes))
+        fe = decoder((fe, meshes), before_pool[:-1])
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print("Mesh Decoder Encoder Elapsed time:", elapsed_time, "seconds")
+
+        start_time = time.time()
+
         fe = self.net2(fe,cty,self.dim)
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print("mesh to rect Elapsed time:", elapsed_time, "seconds")
+
+        ##################################################################
+        skips = skips[::-1]
+        for i in range(len(self.rec_up_conv)):
+            fe = self.rec_up_conv[i](fe)
+            fe = torch.cat((fe, skips[i]),1)
+            fe = self.conv[i](fe)
+        fe = self.output(fe).squeeze(1)
         return fe
 
     def __call__self(self,x):
         return self.forward(x)
 
 class MeshEncoder(nn.Module):
-    def __init__(self, input_c, pools, convs, fcs=None, blocks=0, global_pool=None):
+    def __init__(self, input_channel, convs, pool_res):
         super(MeshEncoder, self).__init__()
-        self.pool = pools
-        self.convs = convs
-        self.skip_count = blocks
-        in_channel = input_c
+        in_channel = input_channel * 2
         self.down = nn.ModuleList()
-        # for out_channel in self.convs:
-        #     down = MeshConv(in_channel,out_channel)
-        exit()
+        for idx, out_channel in enumerate(convs):
+            if(idx == len(convs)-1):
+                #bottleneck
+                down = DownConv(in_channel,out_channel, None)
+            else:
+                down = DownConv(in_channel,out_channel,pool_res[idx])
+            self.down.append(down)
+            in_channel = out_channel
 
     def forward(self, x):
-        print(self.pool)
-        print(self.convs)
-        print(self.skip_count)
+        encoder_outs = []
         fe, meshes = x
-        print(fe.shape)
+        for down in self.down:
+            fe, before_pool = down((fe,meshes))
+            encoder_outs.append(before_pool)
         return fe, encoder_outs
 
     def __call__(self, x):
         return self.forward(x)
 
-
 class MeshDecoder(nn.Module):
-    def __init__(self, unrolls, convs, blocks=0, batch_norm=True, transfer_data=True):
+    def __init__(self, unrolls, up_convs):
         super(MeshDecoder, self).__init__()
+        self.up = nn.ModuleList()
+        self.conv1 = UpConv(up_convs[0],up_convs[1],unrolls[0])
+        in_channel = up_convs[0]
+        up_convs = up_convs[1:]
 
-    def forward(self, x, encoder_outs=None):
+        for idx,out_channel in enumerate(up_convs):
+            up = UpConv(in_channel, out_channel,unrolls[idx])
+            self.up.append(up)
+            in_channel = out_channel
+
+    def forward(self, x, encoder_outs):
         fe, meshes = x
+        encoder_outs = encoder_outs[::-1]
+        # fe = self.conv1((fe,meshes),encoder_outs[0])
+        for idx, up in enumerate(self.up):
+            fe = up((fe,meshes),encoder_outs[idx])
         return fe
 
-    def __call__(self, x, encoder_outs=None):
+    def __call__(self, x, encoder_outs):
         return self.forward(x, encoder_outs)
 
+class DownConv(nn.Module):
+    def __init__(self, in_channels, out_channels, pool):
+        super(DownConv, self).__init__()
+        self.pool = None
+        self.conv1 = MeshConv(in_channels, out_channels)
+        self.conv2 = MeshConv(out_channels, out_channels)
+        if(pool is not None):
+            self.pool = MeshPool(pool)
+
+    def __call__(self, x):
+        return self.forward(x)
+
+    def forward(self, x):
+        fe, meshes = x
+        x1 = self.conv1(fe, meshes)
+        x1 = F.relu(x1)
+        x1 = self.conv2(x1, meshes)
+        x1 = F.relu(x1)
+        x1 = x1.squeeze(3)
+        before_pool = None ### Maybe need to create a deep copy of it
+        if(self.pool is not None):
+            before_pool = x1
+            x1 = self.pool(x1,meshes)
+        return x1, before_pool
+
+class UpConv(nn.Module):
+    def __init__(self, in_channels, out_channels,unroll): #what about unroll and meshunpool
+        super(UpConv, self).__init__()
+        self.conv1 = MeshConv(in_channels,out_channels)
+        self.conv2 = MeshConv(out_channels,out_channels)
+        self.unpool = MeshUnpool(unroll)
+
+    def __call__(self, x, from_down=None):
+        return self.forward(x, from_down)
+
+    def forward(self, x, from_down):
+        from_up, meshes = x
+        x1 = from_up
+        x1 = self.unpool(x1,meshes)
+        x1 = self.conv1(x1,meshes).squeeze(3)
+        x1 = torch.cat((x1,from_down),1)
+        x1 = self.conv1(x1,meshes)
+        x1 = F.relu(x1)
+        x1 = self.conv2(x1,meshes)
+        x1 = F.relu(x1).squeeze(3)
+        return x1
 
 # Decoder that converts mesh back to lattice grid
 # Parameter: image output size, mesh features, mesh connectivity
@@ -294,6 +378,10 @@ class Mesh_To_Grid_Decoder(nn.Module):
         self.image_out = self.image_out.permute(0, 3, 1, 2)
         d_c = self.__deconv_block(dim_channel,self.output[2]*2).to(self.image_out.device) #??????
         fe = d_c(self.image_out)
+        # print("=====================")
+        # print(dim_channel)
+        # print(self.output[2])
+        # print("=======================")
         return fe
 
 def reset_params(model): # todo replace with my init

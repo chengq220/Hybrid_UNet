@@ -3,7 +3,7 @@
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
 --name Medical_Imaging \
---arch unet \
+--arch hybrid \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
 --gpu_ids 1 \
