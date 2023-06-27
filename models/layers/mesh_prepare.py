@@ -18,6 +18,7 @@ def fill_mesh(mesh2fill, image):
     mesh2fill.edge_areas = mesh_data['edge_areas']
     mesh2fill.features = mesh_data['features']
     mesh2fill.sides = mesh_data['sides']
+    mesh2fill.image = mesh_data['image']
 
 def from_scratch(image, length, width):
 
@@ -38,7 +39,7 @@ def from_scratch(image, length, width):
     mesh_data.v_mask = np.ones(len(mesh_data.vs), dtype=bool)
     faces, face_areas = remove_non_manifolds(mesh_data, faces)
     build_gemm(mesh_data, faces, face_areas)
-    mesh_data.features = extract_features_from_image(mesh_data,image)
+    mesh_data.image, mesh_data.features = extract_features_from_image(mesh_data,image)
     return mesh_data
 
 def fill_mesh2(length, width):
@@ -178,7 +179,7 @@ def extract_features_from_image(mesh,image):
         features.append(image[edge[1]].detach())
     features = torch.stack(features)
     features = features.reshape(int(len(features)/2), -1)
-    return features.transpose(0,1)
+    return image, features.transpose(0,1)
 
 def build_gemm(mesh, faces, face_areas):
     """

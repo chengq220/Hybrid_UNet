@@ -10,6 +10,7 @@ class Mesh:
     def __init__(self, file=None, opt=None, hold_history=False, export_folder=''):
         self.vs = self.v_mask = self.filename = self.features = self.edge_areas = None
         self.edges = self.gemm_edges = self.sides = None
+        self.image = None
         self.pool_count = 0
         fill_mesh(self, file)
         self.export_folder = export_folder
@@ -24,15 +25,24 @@ class Mesh:
     def merge_vertices(self, edge_id):
         self.remove_edge(edge_id)
         edge = self.edges[edge_id]
-        v_a = self.vs[edge[0]]
-        v_b = self.vs[edge[1]]
+        v_a = self.vs[edge[0]] #returns the position of vertex a (in 3d space)
+        v_b = self.vs[edge[1]] #returns the position vertex b (in 3d space)
+
+        #Find the element wise max of the two tensors
+        max_tensor = torch.max(self.image[edge[0]],self.image[edge[1]])
+        with torch.no_grad():
+            self.image[edge[0]] = max_tensor
+        vertex_merge = np.copy(edge)
+
         # update pA
         v_a.__iadd__(v_b)
         v_a.__itruediv__(2)
         self.v_mask[edge[1]] = False
+
         mask = self.edges == edge[1]
         self.ve[edge[0]].extend(self.ve[edge[1]])
         self.edges[mask] = edge[0]
+        return vertex_merge
 
     def remove_vertex(self, v):
         self.v_mask[v] = False
@@ -46,6 +56,9 @@ class Mesh:
             self.ve[v].remove(edge_id)
 
     def clean(self, edges_mask, groups):
+        #update the image
+        # self.image = self.image[self.v_mask]
+
         edges_mask = edges_mask.astype(bool)
         torch_mask = torch.from_numpy(edges_mask.copy())
         self.gemm_edges = self.gemm_edges[edges_mask]
@@ -66,8 +79,6 @@ class Mesh:
         self.ve = new_ve
         self.__clean_history(groups, torch_mask)
         self.pool_count += 1
-        # name = "edge_count.txt" + str(self.pool_count)
-        # np.savetxt(name, np.asarray(self.edges), fmt="%s")
         self.export()
 
 

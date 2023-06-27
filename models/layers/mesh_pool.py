@@ -16,15 +16,19 @@ class MeshPool(nn.Module):
         self.__updated_fe = None
         self.__meshes = None
         self.__merge_edges = [-1, -1]
+        self.v_collapse = []
+        self.v_mask = []
 
     def __call__(self, fe, meshes):
         return self.forward(fe, meshes)
 
-    def forward(self, fe, meshes):
+    def forward(self, image, fe, meshes):
         self.__updated_fe = [[] for _ in range(len(meshes))]
         pool_threads = []
         self.__fe = fe
         self.__meshes = meshes
+        self.out_image = []
+        self.image = image
         # iterate over batch
         for mesh_index in range(len(meshes)):
             if self.__multi_thread:
@@ -36,9 +40,10 @@ class MeshPool(nn.Module):
             for mesh_index in range(len(meshes)):
                 pool_threads[mesh_index].join()
         out_features = torch.cat(self.__updated_fe).view(len(meshes), -1, self.__out_target)
-        return out_features
+         return torch.stack(self.out_image), torch.stack(self.v_mask),self.v_collapse, out_features
 
     def __pool_main(self, mesh_index):
+        self.idx_vertex = []
         mesh = self.__meshes[mesh_index]
         queue = self.__build_queue(self.__fe[mesh_index, :, :mesh.edges_count], mesh.edges_count)
         # recycle = []
@@ -51,8 +56,12 @@ class MeshPool(nn.Module):
             edge_id = int(edge_id)
             if mask[edge_id]:
                 self.__pool_edge(mesh, edge_id, mask, edge_groups)
+        self.v_collapse.append(np.array(self.idx_vertex))
         mesh.clean(mask, edge_groups)
         fe = edge_groups.rebuild_features(self.__fe[mesh_index], mask, self.__out_target)
+        image = image[mesh.v_mask]
+        self.out_image.append(image)
+        self.v_mask.append(torch.from_numpy(mesh.v_mask))
         self.__updated_fe[mesh_index] = fe
 
     def __pool_edge(self, mesh, edge_id, mask, edge_groups):
@@ -63,7 +72,7 @@ class MeshPool(nn.Module):
             and self.__is_one_ring_valid(mesh, edge_id):
             self.__merge_edges[0] = self.__pool_side(mesh, edge_id, mask, edge_groups, 0)
             self.__merge_edges[1] = self.__pool_side(mesh, edge_id, mask, edge_groups, 2)
-            mesh.merge_vertices(edge_id)
+            self.idx_vertex.append(mesh.merge_vertices(edge_id))
             mask[edge_id] = False
             MeshPool.__remove_group(mesh, edge_groups, edge_id)
             mesh.edges_count -= 1
@@ -169,9 +178,9 @@ class MeshPool(nn.Module):
         other_keys_b = [mesh.gemm_edges[key_b, other_side_b], mesh.gemm_edges[key_b, other_side_b + 1]]
         return key_a, key_b, side_a, side_b, other_side_a, other_side_b, other_keys_a, other_keys_b
 
-    @staticmethod
-    def __remove_triplete(mesh, mask, edge_groups, invalid_edges):
+    def __remove_triplete(self, mesh, mask, edge_groups, invalid_edges):
         vertex = set(mesh.edges[invalid_edges[0]])
+        self.idx_vertex.append(list(vertex))
         for edge_key in invalid_edges:
             vertex &= set(mesh.edges[edge_key])
             mask[edge_key] = False

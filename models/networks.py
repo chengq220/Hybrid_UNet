@@ -153,10 +153,6 @@ class HybridUnet(nn.Module):
         self.down_convs = down_convs
         self.up_convs = up_convs
         #===========================================================
-
-        #trainable parameter to convert mesh back to image
-        self.net2 = Mesh_To_Grid_Decoder()
-
         # Regular UNet Decoder
         #===========================================================
         self.rec_up_conv = nn.ModuleList()
@@ -196,14 +192,16 @@ class HybridUnet(nn.Module):
         meshes = np.array(meshes)
         end_time = time.time()
         elapsed_time = end_time - start_time
-        print("Create Mesh Elapsed time:", elapsed_time, "seconds")
+        # print("Create Mesh Elapsed time:", elapsed_time, "seconds")
  
         cty = meshes[0].edges.copy() #creates a deep copy of the input edge connectivity
         self.nedges = len(cty)
         self.pool_res = []
+        div_coef = len(self.down_convs) + 1
         for i in range(len(self.down_convs)-1):
-            self.nedges = self.nedges//2
+            self.nedges = self.nedges//div_coef
             self.pool_res.append(self.nedges)
+            div_coef = div_coef - 1
         unrolls = self.pool_res[:-1]
         unrolls = unrolls[::-1] + [len(cty)]
 
@@ -212,19 +210,11 @@ class HybridUnet(nn.Module):
         encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, self.pool_res)
         decoder = MeshDecoder(unrolls,self.up_convs)
         fe,before_pool = encoder((x,meshes))
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        # print("Mesh Encoder Elapsed time:", elapsed_time, "seconds")
+        
         fe = decoder((fe, meshes), before_pool[:-1])
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print("Mesh Decoder Encoder Elapsed time:", elapsed_time, "seconds")
-
-        start_time = time.time()
-
-        fe = self.net2(fe,cty,self.dim)
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print("mesh to rect Elapsed time:", elapsed_time, "seconds")
-
         ##################################################################
         skips = skips[::-1]
         for i in range(len(self.rec_up_conv)):
@@ -300,15 +290,27 @@ class DownConv(nn.Module):
 
     def forward(self, x):
         fe, meshes = x
+        start_time = time.time()
         x1 = self.conv1(fe, meshes)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        # print("Mesh conv1 Elapsed time:", elapsed_time, "seconds")
         x1 = F.relu(x1)
+        start_time = time.time()
         x1 = self.conv2(x1, meshes)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        # print("Mesh conv2 Elapsed time:", elapsed_time, "seconds")
         x1 = F.relu(x1)
         x1 = x1.squeeze(3)
         before_pool = None ### Maybe need to create a deep copy of it
         if(self.pool is not None):
             before_pool = x1
+            start_time = time.time()
             x1 = self.pool(x1,meshes)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            # print("Mesh pool Elapsed time:", elapsed_time, "seconds")
         return x1, before_pool
 
 class UpConv(nn.Module):
@@ -333,57 +335,6 @@ class UpConv(nn.Module):
         x1 = F.relu(x1).squeeze(3)
         return x1
 
-# Decoder that converts mesh back to lattice grid
-# Parameter: image output size, mesh features, mesh connectivity
-class Mesh_To_Grid_Decoder(nn.Module):
-    def __init__(self):
-        #========= The edges being passing in is wrong for some reason==========
-        super(Mesh_To_Grid_Decoder,self).__init__()
-        self.output = None
-        self.mesh_feature = None
-        #contains the edges of how it is connected
-        self.edges = None
-        self.image_out = None
-
-    def __deconv_block(self,in_channel,out_channel):
-        deconv = nn.Sequential(
-            nn.ConvTranspose2d(in_channel, (int)(in_channel/2), kernel_size=1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(int(in_channel/2), out_channel, kernel_size=1),
-            nn.ReLU()
-        )
-        return deconv
-    #extract the feature into lattice grid
-    def __extract_to_lattice(self):
-        images_index = torch.zeros(self.output[0]*self.output[1])
-        for i in range(self.edges.shape[0]):
-            vertex = self.edges[i] #vertex position
-            vertex_feature = self.mesh_feature[:,i] #the feature of the vertex
-            start_index = int(images_index[vertex]) #where to insert the feature
-            end_index = start_index+int(vertex_feature.shape[1]) #where is the end of vertex
-            self.image_out[:,vertex,start_index:end_index] = vertex_feature
-            images_index[vertex] += vertex_feature.shape[1]
-
-    def forward(self,features,connectivity,output_dim):
-        #output_dim contains length x width x channel in this order
-        self.output = output_dim
-        self.edges = connectivity.flatten()
-        self.mesh_feature = torch.transpose(features,1,2) #cut the arrays in half
-        batch = self.mesh_feature.shape[0]
-        self.mesh_feature = self.mesh_feature.reshape(batch,self.mesh_feature.shape[1]*2,int(self.mesh_feature.shape[2]/2))
-        dim_channel = 6 * int(self.mesh_feature.shape[2])
-        self.image_out = torch.zeros((batch,self.output[0] * self.output[1],dim_channel)).to(self.mesh_feature.device)
-        self.__extract_to_lattice()
-        self.image_out = self.image_out.reshape((batch,self.output[0],self.output[1],dim_channel))
-        self.image_out = self.image_out.permute(0, 3, 1, 2)
-        d_c = self.__deconv_block(dim_channel,self.output[2]*2).to(self.image_out.device) #??????
-        fe = d_c(self.image_out)
-        # print("=====================")
-        # print(dim_channel)
-        # print(self.output[2])
-        # print("=======================")
-        return fe
-
 def reset_params(model): # todo replace with my init
     for i, m in enumerate(model.modules()):
         weight_init(m)
@@ -401,3 +352,57 @@ def rectangular_conv_block(in_channel,out_channel,kernel):
         nn.ReLU()
     )
     return conv
+
+
+
+
+# Decoder that converts mesh back to lattice grid
+# Parameter: image output size, mesh features, mesh connectivity
+# class Mesh_To_Grid_Decoder(nn.Module):
+#     def __init__(self):
+#         #========= The edges being passing in is wrong for some reason==========
+#         super(Mesh_To_Grid_Decoder,self).__init__()
+#         self.output = None
+#         self.mesh_feature = None
+#         #contains the edges of how it is connected
+#         self.edges = None
+#         self.image_out = None
+
+#     def __deconv_block(self,in_channel,out_channel):
+#         deconv = nn.Sequential(
+#             nn.ConvTranspose2d(in_channel, (int)(in_channel/2), kernel_size=1),
+#             nn.ReLU(),
+#             nn.ConvTranspose2d(int(in_channel/2), out_channel, kernel_size=1),
+#             nn.ReLU()
+#         )
+#         return deconv
+#     #extract the feature into lattice grid
+#     def __extract_to_lattice(self):
+#         images_index = torch.zeros(self.output[0]*self.output[1])
+#         for i in range(self.edges.shape[0]):
+#             vertex = self.edges[i] #vertex position
+#             vertex_feature = self.mesh_feature[:,i] #the feature of the vertex
+#             start_index = int(images_index[vertex]) #where to insert the feature
+#             end_index = start_index+int(vertex_feature.shape[1]) #where is the end of vertex
+#             self.image_out[:,vertex,start_index:end_index] = vertex_feature
+#             images_index[vertex] += vertex_feature.shape[1]
+
+#     def forward(self,features,connectivity,output_dim):
+#         #output_dim contains length x width x channel in this order
+#         self.output = output_dim
+#         self.edges = connectivity.flatten()
+#         self.mesh_feature = torch.transpose(features,1,2) #cut the arrays in half
+#         batch = self.mesh_feature.shape[0]
+#         self.mesh_feature = self.mesh_feature.reshape(batch,self.mesh_feature.shape[1]*2,int(self.mesh_feature.shape[2]/2))
+#         dim_channel = 6 * int(self.mesh_feature.shape[2])
+#         self.image_out = torch.zeros((batch,self.output[0] * self.output[1],dim_channel)).to(self.mesh_feature.device)
+#         self.__extract_to_lattice()
+#         self.image_out = self.image_out.reshape((batch,self.output[0],self.output[1],dim_channel))
+#         self.image_out = self.image_out.permute(0, 3, 1, 2)
+#         d_c = self.__deconv_block(dim_channel,self.output[2]*2).to(self.image_out.device) #??????
+#         fe = d_c(self.image_out)
+#         # print("=====================")
+#         # print(dim_channel)
+#         # print(self.output[2])
+#         # print("=======================")
+#         return fe
