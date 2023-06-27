@@ -19,8 +19,8 @@ class MeshPool(nn.Module):
         self.v_collapse = []
         self.v_mask = []
 
-    def __call__(self, fe, meshes):
-        return self.forward(fe, meshes)
+    def __call__(self,image, fe, meshes):
+        return self.forward(image, fe, meshes)
 
     def forward(self, image, fe, meshes):
         self.__updated_fe = [[] for _ in range(len(meshes))]
@@ -40,11 +40,12 @@ class MeshPool(nn.Module):
             for mesh_index in range(len(meshes)):
                 pool_threads[mesh_index].join()
         out_features = torch.cat(self.__updated_fe).view(len(meshes), -1, self.__out_target)
-         return torch.stack(self.out_image), torch.stack(self.v_mask),self.v_collapse, out_features
+        return torch.stack(self.out_image), torch.stack(self.v_mask),self.v_collapse, out_features
 
     def __pool_main(self, mesh_index):
         self.idx_vertex = []
         mesh = self.__meshes[mesh_index]
+        image = self.image[mesh_index]
         queue = self.__build_queue(self.__fe[mesh_index, :, :mesh.edges_count], mesh.edges_count)
         # recycle = []
         # last_queue_len = len(queue)

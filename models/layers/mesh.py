@@ -30,8 +30,7 @@ class Mesh:
 
         #Find the element wise max of the two tensors
         max_tensor = torch.max(self.image[edge[0]],self.image[edge[1]])
-        with torch.no_grad():
-            self.image[edge[0]] = max_tensor
+        self.image[edge[0]].data = max_tensor
         vertex_merge = np.copy(edge)
 
         # update pA

@@ -3,12 +3,10 @@ import torch.nn as nn
 import numpy as np
 
 class MeshUnpool(nn.Module):
-    def __init__(self,pad):
+    def __init__(self):
         super(MeshUnpool, self).__init__()
 
     def __call__(self, out,mask, in_images, vc_order):
-        for i in range(len(vc_order)):
-            vc_order[i] = pad(vc_order[i],self.__pad)
         vc_order = np.stack(vc_order)
         return self.forward(out,mask,in_images,vc_order)
 

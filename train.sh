@@ -7,7 +7,7 @@ python train.py \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
 --gpu_ids 2,3,4,5 \
---batch_size 1 \
+--batch_size 5 \
 --lr 0.00001 \
 --num_aug 20 \
 --niter 125 \
