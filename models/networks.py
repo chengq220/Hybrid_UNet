@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from models.layers.mesh_pool import MeshPool
 from models.layers.mesh_unpool import MeshUnpool
 from models.layers.mesh import Mesh
-from models.layers.mesh_conv import MeshConv
 import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
@@ -129,7 +128,7 @@ class Unet(nn.Module):
 
 
 class HybridUnet(nn.Module):
-    def __init__(self, output,rec_down_convs,rec_up_convs,down_convs,up_convs, transfer_data=True):
+    def __init__(self, output,rec_down_convs,rec_up_convs,down_convs,up_convs):
         super(HybridUnet, self).__init__()
         self.rec_down_channel = rec_down_convs
         self.rec_up_channel = rec_up_convs
@@ -149,7 +148,6 @@ class HybridUnet(nn.Module):
 
         #the mesh unet
         #=================================================================
-        self.transfer_data = transfer_data
         self.down_convs = down_convs
         self.up_convs = up_convs
         self.bottleneck = nn.Sequential(
@@ -182,11 +180,12 @@ class HybridUnet(nn.Module):
             skips.append(fe)
             fe = self.maxpool(fe)
 
+       #change the channel to the last number
+        r_fe = fe.permute(0,2,3,1)
+
         ##################################################
         #Mesh Unet with spline conv
         meshes = []
-        #change the channel to the last number
-        r_fe = fe.permute(0,2,3,1)
         #create mesh for the batch
         for image in r_fe:
             mesh = Mesh(file=image, hold_history=True)
@@ -204,11 +203,6 @@ class HybridUnet(nn.Module):
 
         encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs[:-1], self.pool_res, r_fe)
         fe, before_pool, mask, order = encoder(meshes)
-        print(mask.shape)
-        print(order.shape)
-        print(before_pool.shape)
-        print(fe.shape)
-        exit()
 
         #fe = self.bottleneck(fe)
 
@@ -247,11 +241,16 @@ class MeshEncoder(nn.Module):
         mask = []
         order = []
         meshes = x
-        for down in self.down:
-            before_pool, out_image, out_mask,pool_order = down(self.images,meshes)
-            encoder_outs.append(before_pool)
-            mask.append(out_mask)
-            order.append(pool_order)
+        fe = self.images
+        # for down in self.down:
+        before_pool, fe, out_mask,pool_order = self.down[0](fe,meshes)
+        before_pool, fe, out_mask, pool_order = self.down[1](fe,meshes)
+        # before_pool, out_image, out_mask,pool_order = self.down[1](out_image,meshes)
+            # encoder_outs.append(before_pool)
+            # mask.append(out_mask)
+            # order.append(pool_order)
+            # fe = out_image
+        exit()
         mask = torch.stack(mask)
         order = torch.stack(order)
         encoder_outs = torch.stack(encoder_outs)
@@ -289,8 +288,8 @@ class DownConv(nn.Module):
     def __init__(self, in_channels, out_channels, pool):
         super(DownConv, self).__init__()
         self.pool = None
-        self.conv1 = SplineConv(in_channels,out_channels,dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels,dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cpu()
+        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cpu()
         self.pool = MeshPool(pool)
 
     def __call__(self, in_img, x):
@@ -301,13 +300,16 @@ class DownConv(nn.Module):
         conv_features = []
         #Spline Convolution
         for idx,mesh in enumerate(meshes):     
-            v_f = in_img[idx] #check to make sure the images are correct
-            coord = torch.from_numpy(mesh.vs[mesh.v_mask]).to(v_f.device)
+            v_f = in_img[idx].cpu() #check to make sure the images are correct
+            coord = torch.from_numpy(mesh.vs).cpu()
             undirected = np.vstack([mesh.edges, mesh.edges[:, ::-1]]) #make directed graph into undirected
-            edges = torch.stack((torch.from_numpy(undirected[:,0]).to(torch.int64),torch.from_numpy(undirected[:,1]).to(torch.int64))).to(v_f.device)
+            edges = torch.stack((torch.from_numpy(undirected[:,0]).to(torch.int64),torch.from_numpy(undirected[:,1]).to(torch.int64)))
             edge_attribute = coord[edges[0,:]] - coord[edges[1,:]]
             v_f = self.conv1(v_f,edges,edge_attribute)
             v_f = F.relu(v_f)
+            # print(v_f.shape)
+            # print(edges.shape)
+            # print(edge_attribute.shape)
             v_f = self.conv2(v_f,edges,edge_attribute)
             v_f = F.relu(v_f)
             conv_features.append(v_f)

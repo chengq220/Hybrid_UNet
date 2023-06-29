@@ -15,8 +15,6 @@ def fill_mesh(mesh2fill, image):
     mesh2fill.v_mask = mesh_data['v_mask']
     mesh2fill.filename = str(mesh_data['filename'])
     mesh2fill.edge_lengths = mesh_data['edge_lengths']
-    mesh2fill.edge_areas = mesh_data['edge_areas']
-    # mesh2fill.features = mesh_data['features']
     mesh2fill.sides = mesh_data['sides']
     mesh2fill.image = mesh_data['image']
 
@@ -37,8 +35,8 @@ def from_scratch(image, length, width):
     mesh_data.edge_areas = []
     mesh_data.vs,faces = fill_mesh2(length,width)
     mesh_data.v_mask = np.ones(len(mesh_data.vs), dtype=bool)
-    faces, face_areas = remove_non_manifolds(mesh_data, faces)
-    build_gemm(mesh_data, faces, face_areas)
+    faces = remove_non_manifolds(mesh_data, faces)
+    build_gemm(mesh_data, faces)
     mesh_data.image = image.reshape(image.shape[0]*image.shape[1],image.shape[2])
     return mesh_data
 
@@ -46,8 +44,6 @@ def fill_mesh2(length, width):
     size = length * width
     # The vertices position of the regular triangular mesh
     # h is constant since image is 2D
-    h = torch.tensor(1)
-    h = h.repeat(size)
 
     row = (torch.arange(width) / (width - 1))
     row = row.view((-1, 1)).repeat(1, length)
@@ -56,7 +52,7 @@ def fill_mesh2(length, width):
     col = torch.arange(length) / (length - 1)
     col = col.repeat(width)
 
-    vertex = torch.stack((row, col, h), -1)
+    vertex = torch.stack((row, col), -1)
 
     # The faces of the regular triangular mesh
     # The vertex index of the first element in the triplet
@@ -168,12 +164,7 @@ def set_edge_lengths(mesh, edge_points=None):
     edge_lengths = np.linalg.norm(mesh.vs[edge_points[:, 0]] - mesh.vs[edge_points[:, 1]], ord=2, axis=1)
     mesh.edge_lengths = edge_lengths
 
-# def extract_features_from_image(mesh,image):
-#     # image contains the rgb value of each pixel indexed by their index on the grid
-#     image = 
-#     return image
-
-def build_gemm(mesh, faces, face_areas):
+def build_gemm(mesh, faces):
     """
     gemm_edges: array (#E x 4) of the 4 one-ring neighbors for each edge
     sides: array (#E x 4) indices (values of: 0,1,2,3) indicating where an edge is in the gemm_edge entry of the 4 neighboring edges
@@ -204,7 +195,7 @@ def build_gemm(mesh, faces, face_areas):
                 mesh.edge_areas.append(0)
                 nb_count.append(0)
                 edges_count += 1
-            mesh.edge_areas[edge2key[edge]] += face_areas[face_id] / 3
+            # mesh.edge_areas[edge2key[edge]] += face_areas[face_id] / 3
         for idx, edge in enumerate(faces_edges):
             edge_key = edge2key[edge]
             edge_nb[edge_key][nb_count[edge_key]] = edge2key[faces_edges[(idx + 1) % 3]]
@@ -218,18 +209,13 @@ def build_gemm(mesh, faces, face_areas):
     mesh.gemm_edges = np.array(edge_nb, dtype=np.int64)
     mesh.sides = np.array(sides, dtype=np.int64)
     mesh.edges_count = edges_count
-    mesh.edge_areas = np.array(mesh.edge_areas, dtype=np.float32) / np.sum(face_areas)
 
 #no need to remove any faces because we guarantee that all faces of the image are all valid
 def remove_non_manifolds(mesh, faces):
     mesh.ve = [[] for _ in mesh.vs]
     edges_set = set()
     mask = np.ones(len(faces), dtype=bool)
-    _, face_areas = compute_face_normals_and_areas(mesh, faces)
     for face_id, face in enumerate(faces):
-        if face_areas[face_id] == 0:
-            mask[face_id] = False
-            continue
         faces_edges = []
         is_manifold = False
         for i in range(3):
@@ -244,16 +230,4 @@ def remove_non_manifolds(mesh, faces):
         else:
             for idx, edge in enumerate(faces_edges):
                 edges_set.add(edge)
-    # return faces[mask], face_areas[mask]
-    #use this return statement when dealing with images
-    return faces, face_areas
-
-
-def compute_face_normals_and_areas(mesh, faces):
-    face_normals = np.cross(mesh.vs[faces[:, 1]] - mesh.vs[faces[:, 0]],
-                            mesh.vs[faces[:, 2]] - mesh.vs[faces[:, 1]])
-    face_areas = np.sqrt((face_normals ** 2).sum(axis=1))
-    face_normals /= face_areas[:, np.newaxis]
-    assert (not np.any(face_areas[:, np.newaxis] == 0)), 'has zero area face: %s' % mesh.filename
-    face_areas *= 0.5
-    return face_normals, face_areas
+    return faces

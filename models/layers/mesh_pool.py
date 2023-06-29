@@ -23,7 +23,7 @@ class MeshPool(nn.Module):
         return self.forward(image, meshes)
 
     def forward(self, image, meshes):
-        self.__updated_fe = [[] for _ in range(len(meshes))]
+        # self.__updated_fe = [[] for _ in range(len(meshes))]
         pool_threads = []
         # self.__fe = fe
         self.__meshes = meshes
