@@ -6,7 +6,7 @@ python train.py \
 --arch hybrid \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
---gpu_ids 2,3,4,5 \
+--gpu_ids 2 \
 --batch_size 5 \
 --lr 0.00001 \
 --num_aug 20 \

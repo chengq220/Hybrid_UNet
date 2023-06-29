@@ -8,7 +8,7 @@ from models.layers.mesh_prepare import fill_mesh
 
 class Mesh:
     def __init__(self, file=None, opt=None, hold_history=False, export_folder=''):
-        self.vs = self.v_mask = self.filename = self.features = self.edge_areas = None
+        self.vs = self.v_mask = self.filename = self.edge_areas = None
         self.edges = self.gemm_edges = self.sides = None
         self.image = None
         self.pool_count = 0
@@ -19,8 +19,8 @@ class Mesh:
             self.init_history()
         self.export()
 
-    def extract_features(self):
-        return self.features
+    # def extract_features(self):
+    #     return self.features
 
     def merge_vertices(self, edge_id):
         self.remove_edge(edge_id)

@@ -152,6 +152,11 @@ class HybridUnet(nn.Module):
         self.transfer_data = transfer_data
         self.down_convs = down_convs
         self.up_convs = up_convs
+        self.bottleneck = nn.Sequential(
+            SplineConv(self.down_convs[-2],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda(),
+            SplineConv(self.down_convs[-1],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        )
+
         #===========================================================
         # Regular UNet Decoder
         #===========================================================
@@ -180,15 +185,12 @@ class HybridUnet(nn.Module):
         ##################################################
         #Mesh Unet with spline conv
         meshes = []
-        x = []
         #change the channel to the last number
         r_fe = fe.permute(0,2,3,1)
         #create mesh for the batch
         for image in r_fe:
             mesh = Mesh(file=image, hold_history=True)
             meshes.append(mesh)
-            x.append(mesh.features)
-        x = torch.stack(x)
         meshes = np.array(meshes)
  
         cty = meshes[0].edges.copy() #creates a deep copy of the input edge connectivity
@@ -199,18 +201,25 @@ class HybridUnet(nn.Module):
             self.nedges = self.nedges//div_coef
             self.pool_res.append(self.nedges)
             div_coef = div_coef - 1
-        unrolls = self.pool_res[:-1]
-        unrolls = unrolls[::-1] + [len(cty)]
 
-        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, self.pool_res, r_fe)
-        decoder = MeshDecoder(unrolls,self.up_convs)
+        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs[:-1], self.pool_res, r_fe)
+        fe, before_pool, mask, order = encoder(meshes)
+        print(mask.shape)
+        print(order.shape)
+        print(before_pool.shape)
+        print(fe.shape)
+        exit()
 
-        fe,before_pool, mask, order = encoder((x,meshes))
-        fe = decoder((fe, meshes), before_pool[:-1])
+        #fe = self.bottleneck(fe)
+
+        # decoder = MeshDecoder(unrolls,self.up_convs)
+        # fe = decoder((fe, meshes), before_pool[:-1])
 
 
         ##################################################################
         # Regular Unet UpSampling
+        
+        # fe = fe.reshape()
         skips = skips[::-1]
         for i in range(len(self.rec_up_conv)):
             fe = self.rec_up_conv[i](fe)
@@ -229,11 +238,7 @@ class MeshEncoder(nn.Module):
         in_channel = input_channel
         self.down = nn.ModuleList()
         for idx, out_channel in enumerate(convs):
-            if(idx == len(convs)-1):
-                #bottleneck
-                down = DownConv(in_channel,out_channel, None)
-            else:
-                down = DownConv(in_channel,out_channel,pool_res[idx])
+            down = DownConv(in_channel,out_channel,pool_res[idx])
             self.down.append(down)
             in_channel = out_channel
 
@@ -241,13 +246,16 @@ class MeshEncoder(nn.Module):
         encoder_outs = []
         mask = []
         order = []
-        fe, meshes = x
+        meshes = x
         for down in self.down:
-            before_pool, out_image, out_mask,pool_order,fe = down(self.images,(fe,meshes))
+            before_pool, out_image, out_mask,pool_order = down(self.images,meshes)
             encoder_outs.append(before_pool)
             mask.append(out_mask)
             order.append(pool_order)
-        return fe, encoder_outs, mask, order
+        mask = torch.stack(mask)
+        order = torch.stack(order)
+        encoder_outs = torch.stack(encoder_outs)
+        return out_image, encoder_outs, mask, order
 
     def __call__(self, x):
         return self.forward(x)
@@ -283,18 +291,17 @@ class DownConv(nn.Module):
         self.pool = None
         self.conv1 = SplineConv(in_channels,out_channels,dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.conv2 = SplineConv(out_channels, out_channels,dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        if(pool is not None):
-            self.pool = MeshPool(pool)
+        self.pool = MeshPool(pool)
 
     def __call__(self, in_img, x):
         return self.forward(in_img,x)
 
     def forward(self, in_img, x):
-        fe, meshes = x
+        meshes = x
         conv_features = []
         #Spline Convolution
         for idx,mesh in enumerate(meshes):     
-            v_f = in_img[idx]
+            v_f = in_img[idx] #check to make sure the images are correct
             coord = torch.from_numpy(mesh.vs[mesh.v_mask]).to(v_f.device)
             undirected = np.vstack([mesh.edges, mesh.edges[:, ::-1]]) #make directed graph into undirected
             edges = torch.stack((torch.from_numpy(undirected[:,0]).to(torch.int64),torch.from_numpy(undirected[:,1]).to(torch.int64))).to(v_f.device)
@@ -305,27 +312,11 @@ class DownConv(nn.Module):
             v_f = F.relu(v_f)
             conv_features.append(v_f)
         conv_features = torch.stack(conv_features) 
-        print(conv_features.shape)
-        ## need to update the features in the mesh
-        exit()
-        before_pool = None
-        out_image = None
-        image_mask = None
-        collapse_order = None
-        if(self.pool is not None):
-            start_time = time.time()
-            images = []
-            for mesh in meshes:
-                images.append(mesh.image)
-            before_pool = torch.stack(images)
-
-            #the new image, which vertex is taken out of the original img, order of edge collapse, edge feature
-            out_image, image_mask, collapse_order, x1 = self.pool(images,x1,meshes)
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print("Mesh pool Elapsed time:", elapsed_time, "seconds")
+        before_pool = conv_features
+        #the new image, vertex mask, order of edge collapse
+        out_image, image_mask, collapse_order = self.pool(conv_features, meshes)
         #before_pool, pooled_image,image_mask,collapse_order,edge_features
-        return before_pool, out_image, image_mask, collapse_order, x1
+        return before_pool, out_image, image_mask, collapse_order
 
 class UpConv(nn.Module):
     def __init__(self, in_channels, out_channels,unroll): #what about unroll and meshunpool
@@ -339,11 +330,8 @@ class UpConv(nn.Module):
 
     def forward(self, pool_mask, pooled_image, pooled_order, x, from_down):
         from_up, meshes = x
-        print(from_down.shape)
         x1 = from_up
         image = self.unpool(from_down,pool_mask,pooled_image,pooled_order)
-        print(image.shape)
-        exit()
         x1 = self.unpool(x1,meshes)
         x1 = self.conv1(x1,meshes).squeeze(3)
         x1 = torch.cat((x1,from_down),1)

@@ -12,20 +12,20 @@ class MeshPool(nn.Module):
         super(MeshPool, self).__init__()
         self.__out_target = target
         self.__multi_thread = multi_thread
-        self.__fe = None
-        self.__updated_fe = None
+        # self.__fe = None
+        # self.__updated_fe = None
         self.__meshes = None
         self.__merge_edges = [-1, -1]
         self.v_collapse = []
         self.v_mask = []
 
-    def __call__(self,image, fe, meshes):
-        return self.forward(image, fe, meshes)
+    def __call__(self,image, meshes):
+        return self.forward(image, meshes)
 
-    def forward(self, image, fe, meshes):
+    def forward(self, image, meshes):
         self.__updated_fe = [[] for _ in range(len(meshes))]
         pool_threads = []
-        self.__fe = fe
+        # self.__fe = fe
         self.__meshes = meshes
         self.out_image = []
         self.image = image
@@ -39,19 +39,20 @@ class MeshPool(nn.Module):
         if self.__multi_thread:
             for mesh_index in range(len(meshes)):
                 pool_threads[mesh_index].join()
-        out_features = torch.cat(self.__updated_fe).view(len(meshes), -1, self.__out_target)
-        return torch.stack(self.out_image), torch.stack(self.v_mask),self.v_collapse, out_features
+        # out_features = torch.cat(self.__updated_fe).view(len(meshes), -1, self.__out_target)
+        return torch.stack(self.out_image), torch.stack(self.v_mask),self.v_collapse
 
     def __pool_main(self, mesh_index):
         self.idx_vertex = []
         mesh = self.__meshes[mesh_index]
         image = self.image[mesh_index]
-        queue = self.__build_queue(self.__fe[mesh_index, :, :mesh.edges_count], mesh.edges_count)
+        feature = torch.transpose(torch.cat((image[mesh.edges[:,0]],image[mesh.edges[:,1]]),dim=1),0,1)
+        queue = self.__build_queue(feature, mesh.edges_count)
         # recycle = []
         # last_queue_len = len(queue)
         last_count = mesh.edges_count + 1
         mask = np.ones(mesh.edges_count, dtype=bool)
-        edge_groups = MeshUnion(mesh.edges_count, self.__fe.device)
+        edge_groups = MeshUnion(mesh.edges_count, image.device)
         while mesh.edges_count > self.__out_target:
             value, edge_id = heappop(queue)
             edge_id = int(edge_id)
@@ -59,11 +60,11 @@ class MeshPool(nn.Module):
                 self.__pool_edge(mesh, edge_id, mask, edge_groups)
         self.v_collapse.append(np.array(self.idx_vertex))
         mesh.clean(mask, edge_groups)
-        fe = edge_groups.rebuild_features(self.__fe[mesh_index], mask, self.__out_target)
+        # fe = edge_groups.rebuild_features(self.__fe[mesh_index], mask, self.__out_target)
         image = image[mesh.v_mask]
         self.out_image.append(image)
         self.v_mask.append(torch.from_numpy(mesh.v_mask))
-        self.__updated_fe[mesh_index] = fe
+        # self.__updated_fe[mesh_index] = fe
 
     def __pool_edge(self, mesh, edge_id, mask, edge_groups):
         if self.has_boundaries(mesh, edge_id):

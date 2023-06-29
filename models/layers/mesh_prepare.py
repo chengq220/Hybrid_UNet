@@ -16,7 +16,7 @@ def fill_mesh(mesh2fill, image):
     mesh2fill.filename = str(mesh_data['filename'])
     mesh2fill.edge_lengths = mesh_data['edge_lengths']
     mesh2fill.edge_areas = mesh_data['edge_areas']
-    mesh2fill.features = mesh_data['features']
+    # mesh2fill.features = mesh_data['features']
     mesh2fill.sides = mesh_data['sides']
     mesh2fill.image = mesh_data['image']
 
@@ -39,7 +39,7 @@ def from_scratch(image, length, width):
     mesh_data.v_mask = np.ones(len(mesh_data.vs), dtype=bool)
     faces, face_areas = remove_non_manifolds(mesh_data, faces)
     build_gemm(mesh_data, faces, face_areas)
-    mesh_data.image, mesh_data.features = extract_features_from_image(mesh_data,image)
+    mesh_data.image = image.reshape(image.shape[0]*image.shape[1],image.shape[2])
     return mesh_data
 
 def fill_mesh2(length, width):
@@ -168,18 +168,10 @@ def set_edge_lengths(mesh, edge_points=None):
     edge_lengths = np.linalg.norm(mesh.vs[edge_points[:, 0]] - mesh.vs[edge_points[:, 1]], ord=2, axis=1)
     mesh.edge_lengths = edge_lengths
 
-def extract_features_from_image(mesh,image):
-    # image contains the rgb value of each pixel indexed by their index on the grid
-    features = []
-    image = image.reshape(image.shape[0]*image.shape[1],image.shape[2])
-    edges = mesh.edges
-    #for every edge, the feature is the rgb values of the two vertices
-    for edge in edges:
-        features.append(image[edge[0]].detach())
-        features.append(image[edge[1]].detach())
-    features = torch.stack(features)
-    features = features.reshape(int(len(features)/2), -1)
-    return image, features.transpose(0,1)
+# def extract_features_from_image(mesh,image):
+#     # image contains the rgb value of each pixel indexed by their index on the grid
+#     image = 
+#     return image
 
 def build_gemm(mesh, faces, face_areas):
     """
