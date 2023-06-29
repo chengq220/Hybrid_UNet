@@ -11,6 +11,7 @@ from models.layers.mesh_conv import MeshConv
 import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
+from torch_geometric.nn import SplineConv
 import wandb
 import time
 
@@ -143,7 +144,6 @@ class HybridUnet(nn.Module):
         self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
         #=================================================================
         #the dimensional of the resulting image to be inputted into mesh unet
-        self.dim = None
         self.nedges = None
         self.pool_res = None
 
@@ -168,31 +168,28 @@ class HybridUnet(nn.Module):
         self.output = nn.Conv2d(rec_up_convs[-1],output,kernel_size=1,padding="same")
 
     def forward(self,x):
+        #################################################
+        # Regular UNET downsampling
         fe = x
         skips = []
         for conv in self.rec_down:
             fe = conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
-        self.dim = [fe.shape[2],fe.shape[3],fe.shape[1]]
 
         ##################################################
-        #Mesh Unet
+        #Mesh Unet with spline conv
         meshes = []
         x = []
         #change the channel to the last number
         r_fe = fe.permute(0,2,3,1)
         #create mesh for the batch
-        start_time = time.time()
         for image in r_fe:
             mesh = Mesh(file=image, hold_history=True)
             meshes.append(mesh)
             x.append(mesh.features)
         x = torch.stack(x)
         meshes = np.array(meshes)
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        # print("Create Mesh Elapsed time:", elapsed_time, "seconds")
  
         cty = meshes[0].edges.copy() #creates a deep copy of the input edge connectivity
         self.nedges = len(cty)
@@ -205,17 +202,15 @@ class HybridUnet(nn.Module):
         unrolls = self.pool_res[:-1]
         unrolls = unrolls[::-1] + [len(cty)]
 
-        start_time = time.time()
-
-        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, self.pool_res)
+        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, self.pool_res, r_fe)
         decoder = MeshDecoder(unrolls,self.up_convs)
+
         fe,before_pool, mask, order = encoder((x,meshes))
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        # print("Mesh Encoder Elapsed time:", elapsed_time, "seconds")
-        
         fe = decoder((fe, meshes), before_pool[:-1])
+
+
         ##################################################################
+        # Regular Unet UpSampling
         skips = skips[::-1]
         for i in range(len(self.rec_up_conv)):
             fe = self.rec_up_conv[i](fe)
@@ -228,9 +223,10 @@ class HybridUnet(nn.Module):
         return self.forward(x)
 
 class MeshEncoder(nn.Module):
-    def __init__(self, input_channel, convs, pool_res):
+    def __init__(self, input_channel, convs, pool_res, images):
         super(MeshEncoder, self).__init__()
-        in_channel = input_channel * 2
+        self.images = images.view(images.shape[0], images.shape[1] * images.shape[2], images.shape[3])
+        in_channel = input_channel
         self.down = nn.ModuleList()
         for idx, out_channel in enumerate(convs):
             if(idx == len(convs)-1):
@@ -247,7 +243,7 @@ class MeshEncoder(nn.Module):
         order = []
         fe, meshes = x
         for down in self.down:
-            before_pool, out_image, out_mask,pool_order,fe = down((fe,meshes))
+            before_pool, out_image, out_mask,pool_order,fe = down(self.images,(fe,meshes))
             encoder_outs.append(before_pool)
             mask.append(out_mask)
             order.append(pool_order)
@@ -285,21 +281,33 @@ class DownConv(nn.Module):
     def __init__(self, in_channels, out_channels, pool):
         super(DownConv, self).__init__()
         self.pool = None
-        self.conv1 = MeshConv(in_channels, out_channels)
-        self.conv2 = MeshConv(out_channels, out_channels)
+        self.conv1 = SplineConv(in_channels,out_channels,dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv2 = SplineConv(out_channels, out_channels,dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
         if(pool is not None):
             self.pool = MeshPool(pool)
 
-    def __call__(self, x):
-        return self.forward(x)
+    def __call__(self, in_img, x):
+        return self.forward(in_img,x)
 
-    def forward(self, x):
+    def forward(self, in_img, x):
         fe, meshes = x
-        x1 = self.conv1(fe, meshes)
-        x1 = F.relu(x1)
-        x1 = self.conv2(x1, meshes)
-        x1 = F.relu(x1)
-        x1 = x1.squeeze(3)
+        conv_features = []
+        #Spline Convolution
+        for idx,mesh in enumerate(meshes):     
+            v_f = in_img[idx]
+            coord = torch.from_numpy(mesh.vs[mesh.v_mask]).to(v_f.device)
+            undirected = np.vstack([mesh.edges, mesh.edges[:, ::-1]]) #make directed graph into undirected
+            edges = torch.stack((torch.from_numpy(undirected[:,0]).to(torch.int64),torch.from_numpy(undirected[:,1]).to(torch.int64))).to(v_f.device)
+            edge_attribute = coord[edges[0,:]] - coord[edges[1,:]]
+            v_f = self.conv1(v_f,edges,edge_attribute)
+            v_f = F.relu(v_f)
+            v_f = self.conv2(v_f,edges,edge_attribute)
+            v_f = F.relu(v_f)
+            conv_features.append(v_f)
+        conv_features = torch.stack(conv_features) 
+        print(conv_features.shape)
+        ## need to update the features in the mesh
+        exit()
         before_pool = None
         out_image = None
         image_mask = None
