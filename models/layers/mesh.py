@@ -56,7 +56,7 @@ class Mesh:
         c3 = c3[c3_mask]
 
         faces = torch.stack((c1, c2, c3), -1)
-        return np.asarray(vertex), np.asarray(faces)
+        return vertex, np.asarray(faces)
 
     #Generate the initial edges for mesh
     def __get_edges(self, faces):
@@ -132,3 +132,6 @@ class Mesh:
     def vertex_collapse_order(self):
         order = torch.cat((torch.asarray(self.vertex_collapse[:,0]),torch.asarray(self.vertex_collapse[:,1])))
         return order
+    
+    def update_image(self,image):
+        self.image = image

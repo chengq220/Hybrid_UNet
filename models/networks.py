@@ -4,8 +4,8 @@ from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
 import torch.nn.functional as F
-from models.layers.mesh_pool import MeshPool
-from models.layers.mesh_unpool import MeshUnpool
+# from models.layers.mesh_pool import MeshPool
+# from models.layers.mesh_unpool import MeshUnpool
 from models.layers.mesh import Mesh
 import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
@@ -141,11 +141,8 @@ class HybridUnet(nn.Module):
             self.rec_down.append(down)
             in_channel = out
         self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
-        #=================================================================
-        #the dimensional of the resulting image to be inputted into mesh unet
-        self.nedges = None
-        self.pool_res = None
 
+        #=================================================================
         #the mesh unet
         #=================================================================
         self.down_convs = down_convs
@@ -160,7 +157,7 @@ class HybridUnet(nn.Module):
         #===========================================================
         self.rec_up_conv = nn.ModuleList()
         self.conv = nn.ModuleList()
-        in_channel = self.rec_down_channel[-1] * 2 #times by two because all the edges has the feature of 2 vertices
+        in_channel = self.rec_down_channel[-1]
         for out_channel in rec_up_convs:
             up = nn.ConvTranspose2d(in_channel,out_channel,kernel_size=2,stride=2)
             self.rec_up_conv.append(up)
@@ -183,26 +180,22 @@ class HybridUnet(nn.Module):
     #    #change the channel to the last number
         fe = x 
         r_fe = fe.permute(0,2,3,1)
-
+        image_size = r_fe.shape[1]*r_fe.shape[2]
         ##################################################
         #Mesh Unet with spline conv
         meshes = []
         #create mesh for the batch
         for image in r_fe:
-            mesh = Mesh(file=image, hold_history=True)
+            mesh = Mesh(file=image)
             meshes.append(mesh)
         meshes = np.array(meshes)
  
-        cty = meshes[0].edges.copy() #creates a deep copy of the input edge connectivity
-        self.nedges = len(cty)
-        self.pool_res = []
-        div_coef = len(self.down_convs) + 1
+        pool_res = []
         for i in range(len(self.down_convs)-1):
-            self.nedges = self.nedges//div_coef
-            self.pool_res.append(self.nedges)
-            div_coef = div_coef - 1
+            image_size = image_size//4
+            pool_res.append(image_size)
 
-        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs[:-1], self.pool_res, r_fe)
+        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs[:-1], pool_res, r_fe)
         fe, before_pool, mask, order = encoder(meshes)
 
         #fe = self.bottleneck(fe)
@@ -247,7 +240,7 @@ class MeshEncoder(nn.Module):
         fe = self.images
         # for down in self.down:
         before_pool, fe, out_mask,pool_order = self.down[0](fe,meshes)
-        before_pool, fe, out_mask, pool_order = self.down[1](fe,meshes)
+        # before_pool, fe, out_mask, pool_order = self.down[1](fe,meshes)
         # before_pool, out_image, out_mask,pool_order = self.down[1](out_image,meshes)
             # encoder_outs.append(before_pool)
             # mask.append(out_mask)
@@ -291,36 +284,29 @@ class DownConv(nn.Module):
     def __init__(self, in_channels, out_channels, pool):
         super(DownConv, self).__init__()
         self.pool = None
-        self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cpu()
-        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cpu()
-        self.pool = MeshPool(pool)
+        self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        # self.pool = MeshPool(pool)
 
     def __call__(self, in_img, x):
         return self.forward(in_img,x)
 
     def forward(self, in_img, x):
         meshes = x
-        conv_features = []
+        before_pool = []
         #Spline Convolution
-        #### Conv works but pooling doesn't work since there is this issue of vertex and edges incompatibility
         for idx,mesh in enumerate(meshes):     
-            # v_f = in_img[idx].cpu()
-            v_f = mesh.image.cpu() ####
-            coord = torch.from_numpy(mesh.vs).cpu() #this never changes
-            undirected = np.vstack([mesh.edges, mesh.edges[:, ::-1]]) #make directed graph into undirected
-            edges = torch.stack((torch.from_numpy(undirected[:,0]).to(torch.int64),torch.from_numpy(undirected[:,1]).to(torch.int64)))
-            edge_attribute = coord[edges[0,:]] - coord[edges[1,:]] #this changes as it pools
+            v_f = mesh.image
+            edges = mesh.edges.cuda()
+            edge_attribute = mesh.get_attributes().cuda()
             v_f = self.conv1(v_f,edges,edge_attribute)
             v_f = F.relu(v_f)
             v_f = self.conv2(v_f,edges,edge_attribute)
-            v_f = F.relu(v_f) #need to update mesh.image
-            conv_features.append(v_f)
-        conv_features = torch.stack(conv_features) 
-        before_pool = conv_features
-        #the new image, vertex mask, order of edge collapse
-        out_image, image_mask, collapse_order = self.pool(conv_features, meshes)
-        #before_pool, pooled_image,image_mask,collapse_order,edge_features
-        return before_pool, out_image, image_mask, collapse_order
+            v_f = F.relu(v_f)
+            before_pool.append(v_f)
+            mesh.image = v_f
+        before_pool = torch.stack(before_pool)
+        return before_pool
 
 class UpConv(nn.Module):
     def __init__(self, in_channels, out_channels,unroll): #what about unroll and meshunpool
