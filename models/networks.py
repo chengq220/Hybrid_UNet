@@ -55,7 +55,7 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
         rec_down = ncf[:2]
         rec_up = rec_down[::-1]
 
-        mesh_down = ncf[2:]
+        mesh_down = ncf
         mesh_up = mesh_down[::-1] 
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
     else:
@@ -173,14 +173,15 @@ class HybridUnet(nn.Module):
     def forward(self,x):
         #################################################
         # Regular UNET downsampling
-        fe = x
-        skips = []
-        for conv in self.rec_down:
-            fe = conv(fe)
-            skips.append(fe)
-            fe = self.maxpool(fe)
+    #     fe = x
+    #     skips = []
+    #     for conv in self.rec_down:
+    #         fe = conv(fe)
+    #         skips.append(fe)
+    #         fe = self.maxpool(fe)
 
-       #change the channel to the last number
+    #    #change the channel to the last number
+        fe = x 
         r_fe = fe.permute(0,2,3,1)
 
         ##################################################
@@ -214,12 +215,13 @@ class HybridUnet(nn.Module):
         # Regular Unet UpSampling
         
         # fe = fe.reshape()
-        skips = skips[::-1]
-        for i in range(len(self.rec_up_conv)):
-            fe = self.rec_up_conv[i](fe)
-            fe = torch.cat((fe, skips[i]),1)
-            fe = self.conv[i](fe)
-        fe = self.output(fe).squeeze(1)
+        # skips = skips[::-1]
+        # for i in range(len(self.rec_up_conv)):
+        #     fe = self.rec_up_conv[i](fe)
+        #     fe = torch.cat((fe, skips[i]),1)
+        #     fe = self.conv[i](fe)
+        # fe = self.output(fe).squeeze(1)
+        exit()
         return fe
 
     def __call__self(self,x):
@@ -230,6 +232,7 @@ class MeshEncoder(nn.Module):
         super(MeshEncoder, self).__init__()
         self.images = images.view(images.shape[0], images.shape[1] * images.shape[2], images.shape[3])
         in_channel = input_channel
+        in_channel = 3
         self.down = nn.ModuleList()
         for idx, out_channel in enumerate(convs):
             down = DownConv(in_channel,out_channel,pool_res[idx])
@@ -299,19 +302,18 @@ class DownConv(nn.Module):
         meshes = x
         conv_features = []
         #Spline Convolution
+        #### Conv works but pooling doesn't work since there is this issue of vertex and edges incompatibility
         for idx,mesh in enumerate(meshes):     
-            v_f = in_img[idx].cpu() #check to make sure the images are correct
-            coord = torch.from_numpy(mesh.vs).cpu()
+            # v_f = in_img[idx].cpu()
+            v_f = mesh.image.cpu() ####
+            coord = torch.from_numpy(mesh.vs).cpu() #this never changes
             undirected = np.vstack([mesh.edges, mesh.edges[:, ::-1]]) #make directed graph into undirected
             edges = torch.stack((torch.from_numpy(undirected[:,0]).to(torch.int64),torch.from_numpy(undirected[:,1]).to(torch.int64)))
-            edge_attribute = coord[edges[0,:]] - coord[edges[1,:]]
+            edge_attribute = coord[edges[0,:]] - coord[edges[1,:]] #this changes as it pools
             v_f = self.conv1(v_f,edges,edge_attribute)
             v_f = F.relu(v_f)
-            # print(v_f.shape)
-            # print(edges.shape)
-            # print(edge_attribute.shape)
             v_f = self.conv2(v_f,edges,edge_attribute)
-            v_f = F.relu(v_f)
+            v_f = F.relu(v_f) #need to update mesh.image
             conv_features.append(v_f)
         conv_features = torch.stack(conv_features) 
         before_pool = conv_features

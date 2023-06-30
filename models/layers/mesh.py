@@ -1,211 +1,134 @@
-from tempfile import mkstemp
-from shutil import move
 import torch
 import numpy as np
-import os
-from models.layers.mesh_union import MeshUnion
-from models.layers.mesh_prepare import fill_mesh
+# from mesh_pool import MeshPool
+# from mesh_unpool import MeshUnpool
+# import time
+
 
 class Mesh:
-    def __init__(self, file=None, opt=None, hold_history=False, export_folder=''):
-        self.vs = self.v_mask = self.filename = self.edge_areas = None
-        self.edges = self.gemm_edges = self.sides = None
-        self.image = None
-        self.pool_count = 0
-        fill_mesh(self, file)
-        self.export_folder = export_folder
-        self.history_data = None
-        if hold_history:
-            self.init_history()
-        self.export()
+    def __init__(self, file=None):
+        self.image = file.view(file.shape[0]*file.shape[1],file.shape[2])
+        self.vertex_count = None
+        self.vs, self.faces = self.__fill_mesh2(file.shape[0],file.shape[1])
+        #return edges in the coo format
+        self.edges, self.edge_counts = self.__get_edges(self.faces)
+        self.adj_matrix = self.__adjacency(self.edges)
+        self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
+        self.vertex_collapse = []
+        self.history = []
 
-    # def extract_features(self):
-    #     return self.features
+    def __fill_mesh2(self,length, width):
+        size = length * width
+        self.vertex_count = size
+        # The vertices position of the regular triangular mesh
+        # h is constant since image is 2D
 
-    def merge_vertices(self, edge_id):
-        self.remove_edge(edge_id)
-        edge = self.edges[edge_id]
-        v_a = self.vs[edge[0]] #returns the position of vertex a (in 3d space)
-        v_b = self.vs[edge[1]] #returns the position vertex b (in 3d space)
+        row = (torch.arange(width) / (width - 1))
+        row = row.view((-1, 1)).repeat(1, length)
+        row = row.view(-1)
 
-        #Find the element wise max of the two tensors
-        max_tensor = torch.max(self.image[edge[0]],self.image[edge[1]])
-        self.image[edge[0]].data = max_tensor
-        vertex_merge = np.copy(edge)
+        col = torch.arange(length) / (length - 1)
+        col = col.repeat(width)
 
-        # update pA
-        v_a.__iadd__(v_b)
-        v_a.__itruediv__(2)
-        self.v_mask[edge[1]] = False
+        vertex = torch.stack((row, col), -1)
 
-        mask = self.edges == edge[1]
-        self.ve[edge[0]].extend(self.ve[edge[1]])
-        self.edges[mask] = edge[0]
-        return vertex_merge
+        # The faces of the regular triangular mesh
+        # The vertex index of the first element in the triplet
+        c_pre = torch.arange(size - width)
+        c1 = c_pre.view((-1, 1)).repeat(1, 2)
+        c1 = c1.view(-1)
+        c1_mask = ~((width - 1) == c1 % width)
+        c1 = c1[c1_mask]
 
-    def remove_vertex(self, v):
-        self.v_mask[v] = False
+        # the vertex index of the second element in the triplet
+        c2 = torch.arange(size - width)
+        c2_mask = ~(c_pre % width == 0)
+        c2 = c2[c2_mask]
+        c2_diagonal = c2 + width - 1
+        c2, c2_diagonal = c2.view((-1, 1)), c2_diagonal.view((-1, 1))
+        c2 = torch.cat((c2, c2_diagonal), 1).view(-1)
 
-    def remove_edge(self, edge_id):
-        vs = self.edges[edge_id]
-        for v in vs:
-            if edge_id not in self.ve[v]:
-                print(self.ve[v])
-                print(self.filename)
-            self.ve[v].remove(edge_id)
+        # the vertex index of the third element in the triplet
+        c3 = torch.arange(width, size)
+        c3 = c3.view((-1, 1)).repeat(1, 2)
+        c3 = c3.view(-1)
+        c3_mask = ~(0 == c3 % width)
+        c3 = c3[c3_mask]
 
-    def clean(self, edges_mask, groups):
-        #update the image
-        # self.image = self.image[self.v_mask]
+        faces = torch.stack((c1, c2, c3), -1)
+        return np.asarray(vertex), np.asarray(faces)
 
-        edges_mask = edges_mask.astype(bool)
-        torch_mask = torch.from_numpy(edges_mask.copy())
-        self.gemm_edges = self.gemm_edges[edges_mask]
-        self.edges = self.edges[edges_mask]
-        self.sides = self.sides[edges_mask]
-        new_ve = []
-        edges_mask = np.concatenate([edges_mask, [False]])
-        new_indices = np.zeros(edges_mask.shape[0], dtype=np.int32)
-        new_indices[-1] = -1
-        new_indices[edges_mask] = np.arange(0, np.ma.where(edges_mask)[0].shape[0])
-        self.gemm_edges[:, :] = new_indices[self.gemm_edges[:, :]]
-        for v_index, ve in enumerate(self.ve):
-            update_ve = []
-            # if self.v_mask[v_index]:
-            for e in ve:
-                update_ve.append(new_indices[e])
-            new_ve.append(update_ve)
-        self.ve = new_ve
-        self.__clean_history(groups, torch_mask)
-        self.pool_count += 1
-        self.export()
-
-
-    def export(self, file=None, vcolor=None):
-        if file is None:
-            if self.export_folder:
-                filename, file_extension = os.path.splitext(self.filename)
-                file = '%s/%s_%d%s' % (self.export_folder, filename, self.pool_count, file_extension)
-            else:
-                return
-        faces = []
-        vs = self.vs[self.v_mask]
-        gemm = np.array(self.gemm_edges)
-        new_indices = np.zeros(self.v_mask.shape[0], dtype=np.int32)
-        new_indices[self.v_mask] = np.arange(0, np.ma.where(self.v_mask)[0].shape[0])
-        for edge_index in range(len(gemm)):
-            cycles = self.__get_cycle(gemm, edge_index)
-            for cycle in cycles:
-                faces.append(self.__cycle_to_face(cycle, new_indices))
-        with open(file, 'w+') as f:
-            for vi, v in enumerate(vs):
-                vcol = ' %f %f %f' % (vcolor[vi, 0], vcolor[vi, 1], vcolor[vi, 2]) if vcolor is not None else ''
-                f.write("v %f %f %f%s\n" % (v[0], v[1], v[2], vcol))
-            for face_id in range(len(faces) - 1):
-                f.write("f %d %d %d\n" % (faces[face_id][0] + 1, faces[face_id][1] + 1, faces[face_id][2] + 1))
-            f.write("f %d %d %d" % (faces[-1][0] + 1, faces[-1][1] + 1, faces[-1][2] + 1))
-            for edge in self.edges:
-                f.write("\ne %d %d" % (new_indices[edge[0]] + 1, new_indices[edge[1]] + 1))
-
-    def export_segments(self, segments):
-        if not self.export_folder:
-            return
-        cur_segments = segments
-        for i in range(self.pool_count + 1):
-            filename, file_extension = os.path.splitext(self.filename)
-            file = '%s/%s_%d%s' % (self.export_folder, filename, i, file_extension)
-            fh, abs_path = mkstemp()
-            edge_key = 0
-            with os.fdopen(fh, 'w') as new_file:
-                with open(file) as old_file:
-                    for line in old_file:
-                        if line[0] == 'e':
-                            new_file.write('%s %d' % (line.strip(), cur_segments[edge_key]))
-                            if edge_key < len(cur_segments):
-                                edge_key += 1
-                                new_file.write('\n')
-                        else:
-                            new_file.write(line)
-            os.remove(file)
-            move(abs_path, file)
-            if i < len(self.history_data['edges_mask']):
-                cur_segments = segments[:len(self.history_data['edges_mask'][i])]
-                cur_segments = cur_segments[self.history_data['edges_mask'][i]]
-
-    def __get_cycle(self, gemm, edge_id):
-        cycles = []
-        for j in range(2):
-            next_side = start_point = j * 2
-            next_key = edge_id
-            if gemm[edge_id, start_point] == -1:
-                continue
-            cycles.append([])
+    #Generate the initial edges for mesh
+    def __get_edges(self, faces):
+        edge2key = dict()
+        edges = []
+        edges_count = 0
+        for face_id, face in enumerate(faces):
+            faces_edges = []
             for i in range(3):
-                tmp_next_key = gemm[next_key, next_side]
-                tmp_next_side = self.sides[next_key, next_side]
-                tmp_next_side = tmp_next_side + 1 - 2 * (tmp_next_side % 2)
-                gemm[next_key, next_side] = -1
-                gemm[next_key, next_side + 1 - 2 * (next_side % 2)] = -1
-                next_key = tmp_next_key
-                next_side = tmp_next_side
-                cycles[-1].append(next_key)
-        return cycles
+                cur_edge = (face[i], face[(i + 1) % 3])
+                faces_edges.append(cur_edge)
+            for idx, edge in enumerate(faces_edges):
+                edge = tuple(sorted(list(edge)))
+                faces_edges[idx] = edge
+                if edge not in edge2key:
+                    edge2key[edge] = edges_count
+                    edges.append(list(edge))
+                    edges_count += 1
+        edges = np.asarray(edges,dtype=np.int64)
+        u_e = np.vstack([edges, edges[:, ::-1]]) #undirected edges
+        edges = torch.stack((torch.from_numpy(u_e[:, 0]), torch.from_numpy(u_e[:, 1])))
+        return edges, edges.shape[1]
 
-    def __cycle_to_face(self, cycle, v_indices):
-        face = []
-        for i in range(3):
-            v = list(set(self.edges[cycle[i]]) & set(self.edges[cycle[(i + 1) % 3]]))[0]
-            face.append(v_indices[v])
-        return face
+    #Generate adjacency matrix give edges in coo format
+    def __adjacency(self,edges):
+        num_nodes = edges.max().item() + 1
+        #num_nodes = self.vertex_count
+        adj_matrix = torch.sparse_coo_tensor(edges, torch.ones(edges.size(1)), size=(num_nodes, num_nodes))
+        adj_matrix = adj_matrix.to_dense()
+        return adj_matrix
 
-    def init_history(self):
-        self.history_data = {
-                               'groups': [],
-                               'gemm_edges': [self.gemm_edges.copy()],
-                               'occurrences': [],
-                               'old2current': np.arange(self.edges_count, dtype=np.int32),
-                               'current2old': np.arange(self.edges_count, dtype=np.int32),
-                               'edges_mask': [torch.ones(self.edges_count,dtype=torch.bool)],
-                               'edges_count': [self.edges_count],
-                              }
-        if self.export_folder:
-            self.history_data['collapses'] = MeshUnion(self.edges_count)
+    #update the edges stored in the mesh
+    def __update_edges(self):
+        edges = self.adj_matrix.nonzero()
+        edges = torch.stack([edges[:, 0],edges[:,1]],dim=0)
+        return edges
 
-    def union_groups(self, source, target):
-        if self.export_folder and self.history_data:
-            self.history_data['collapses'].union(self.history_data['current2old'][source], self.history_data['current2old'][target])
-        return
+    def get_attributes(self):
+        attribute = self.vs[self.edges[0, :]] - self.vs[self.edges[1, :]]
+        return attribute
 
-    def remove_group(self, index):
-        if self.history_data is not None:
-            self.history_data['edges_mask'][-1][self.history_data['current2old'][index]] = 0
-            self.history_data['old2current'][self.history_data['current2old'][index]] = -1
-            if self.export_folder:
-                self.history_data['collapses'].remove_group(self.history_data['current2old'][index])
+    #does merge vertex update the matrix every time a vertex merge or until all the items to be merged
+    #have been determined
+    def merge_vertex(self,edge_id):
+        v_0 = edge_id[0]
+        v_1 = edge_id[1]
 
-    def get_groups(self):
-        return self.history_data['groups'].pop()
+        max_tensor = torch.max(self.image[v_0], self.image[v_1])
+        with torch.no_grad():
+            self.image[v_0] = max_tensor
 
-    def get_occurrences(self):
-        return self.history_data['occurrences'].pop()
-    
-    def __clean_history(self, groups, pool_mask):
-        if self.history_data is not None:
-            mask = self.history_data['old2current'] != -1
-            self.history_data['old2current'][mask] = np.arange(self.edges_count, dtype=np.int32)
-            self.history_data['current2old'][0: self.edges_count] = np.ma.where(mask)[0]
-            if self.export_folder != '':
-                self.history_data['edges_mask'].append(self.history_data['edges_mask'][-1].clone())
-            self.history_data['occurrences'].append(groups.get_occurrences())
-            self.history_data['groups'].append(groups.get_groups(pool_mask))
-            self.history_data['gemm_edges'].append(self.gemm_edges.copy())
-            self.history_data['edges_count'].append(self.edges_count)
-    
-    def unroll_gemm(self):
-        self.history_data['gemm_edges'].pop()
-        self.gemm_edges = self.history_data['gemm_edges'][-1]
-        self.history_data['edges_count'].pop()
-        self.edges_count = self.history_data['edges_count'][-1]
+        neighbors = torch.nonzero(self.adj_matrix[v_1]).squeeze(1)
+        for neighbor in neighbors:
+            if(neighbor != v_0): #update the neighbors and its adjacent vertices
+                self.adj_matrix[neighbor,v_1] = False
+                self.adj_matrix[neighbor,v_0] = True
+                self.adj_matrix[v_0,neighbor] = True
+        self.vertex_mask[v_1] = False
+        self.vertex_count = self.vertex_count - 1
+        self.vertex_collapse.append(edge_id)
 
-    def get_edge_areas(self):
-        return self.edge_areas
+    #clean up the adjacency matrix (vertex/edges) pooled
+    def clean_up(self):
+        self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
+        self.image = self.image[self.vertex_mask]
+        self.edges = self.__update_edges()
+        self.edge_counts = self.edges.shape[1]
+        self.history.append(np.vstack(self.vertex_collapse))
+        self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
+        self.vertex_collapse = []
+
+    #getter method: to get vertex collapse
+    def vertex_collapse_order(self):
+        order = torch.cat((torch.asarray(self.vertex_collapse[:,0]),torch.asarray(self.vertex_collapse[:,1])))
+        return order
