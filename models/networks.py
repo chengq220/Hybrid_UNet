@@ -4,7 +4,7 @@ from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
 import torch.nn.functional as F
-# from models.layers.mesh_pool import MeshPool
+from models.layers.mesh_pool import MeshPool
 # from models.layers.mesh_unpool import MeshUnpool
 from models.layers.mesh import Mesh
 import numpy as np
@@ -223,7 +223,6 @@ class HybridUnet(nn.Module):
 class MeshEncoder(nn.Module):
     def __init__(self, input_channel, convs, pool_res, images):
         super(MeshEncoder, self).__init__()
-        self.images = images.view(images.shape[0], images.shape[1] * images.shape[2], images.shape[3])
         in_channel = input_channel
         in_channel = 3
         self.down = nn.ModuleList()
@@ -237,9 +236,8 @@ class MeshEncoder(nn.Module):
         mask = []
         order = []
         meshes = x
-        fe = self.images
         # for down in self.down:
-        before_pool, fe, out_mask,pool_order = self.down[0](fe,meshes)
+        before_pool, fe, out_mask,pool_order = self.down[0](meshes)
         # before_pool, fe, out_mask, pool_order = self.down[1](fe,meshes)
         # before_pool, out_image, out_mask,pool_order = self.down[1](out_image,meshes)
             # encoder_outs.append(before_pool)
@@ -286,12 +284,12 @@ class DownConv(nn.Module):
         self.pool = None
         self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        # self.pool = MeshPool(pool)
+        self.pool = MeshPool(pool)
 
-    def __call__(self, in_img, x):
-        return self.forward(in_img,x)
+    def __call__(self, x):
+        return self.forward(x)
 
-    def forward(self, in_img, x):
+    def forward(self, x):
         meshes = x
         before_pool = []
         #Spline Convolution
@@ -306,6 +304,8 @@ class DownConv(nn.Module):
             before_pool.append(v_f)
             mesh.image = v_f
         before_pool = torch.stack(before_pool)
+        self.pool(meshes)
+        print(meshes[0].vertex_count)
         return before_pool
 
 class UpConv(nn.Module):

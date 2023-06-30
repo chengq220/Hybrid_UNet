@@ -101,8 +101,7 @@ class Mesh:
     #does merge vertex update the matrix every time a vertex merge or until all the items to be merged
     #have been determined
     def merge_vertex(self,edge_id):
-        v_0 = edge_id[0]
-        v_1 = edge_id[1]
+        v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
 
         max_tensor = torch.max(self.image[v_0], self.image[v_1])
         with torch.no_grad():
@@ -132,6 +131,3 @@ class Mesh:
     def vertex_collapse_order(self):
         order = torch.cat((torch.asarray(self.vertex_collapse[:,0]),torch.asarray(self.vertex_collapse[:,1])))
         return order
-    
-    def update_image(self,image):
-        self.image = image
