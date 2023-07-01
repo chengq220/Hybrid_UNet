@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-# from mesh_pool import MeshPool
+from mesh_pool import MeshPool
 # from mesh_unpool import MeshUnpool
 # import time
 
@@ -10,11 +10,11 @@ class Mesh:
         self.image = file.view(file.shape[0]*file.shape[1],file.shape[2])
         self.vertex_count = None
         self.vs, self.faces = self.__fill_mesh2(file.shape[0],file.shape[1])
-        #return edges in the coo format
+        #return the directed edges in the coo format
         self.edges, self.edge_counts = self.__get_edges(self.faces)
         self.adj_matrix = self.__adjacency(self.edges)
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
-        self.vertex_collapse = []
+        self.collapse_order = []
         self.history = []
 
     def __fill_mesh2(self,length, width):
@@ -75,9 +75,8 @@ class Mesh:
                     edge2key[edge] = edges_count
                     edges.append(list(edge))
                     edges_count += 1
-        edges = np.asarray(edges,dtype=np.int64)
-        u_e = np.vstack([edges, edges[:, ::-1]]) #undirected edges
-        edges = torch.stack((torch.from_numpy(u_e[:, 0]), torch.from_numpy(u_e[:, 1])))
+        d_e = np.asarray(edges,dtype=np.int64)
+        edges = torch.stack((torch.from_numpy(d_e[:, 0]), torch.from_numpy(d_e[:, 1])))
         return edges, edges.shape[1]
 
     #Generate adjacency matrix give edges in coo format
@@ -94,9 +93,11 @@ class Mesh:
         edges = torch.stack([edges[:, 0],edges[:,1]],dim=0)
         return edges
 
-    def get_attributes(self):
-        attribute = self.vs[self.edges[0, :]] - self.vs[self.edges[1, :]]
-        return attribute
+    def get_undirected_attributes(self):
+        edge_flipped = torch.stack((self.edges[1, :], self.edges[0, :]))
+        u_e = torch.cat((self.edges,edge_flipped),dim=1)
+        attribute = self.vs[u_e[0, :]] - self.vs[u_e[1, :]]
+        return u_e, attribute
 
     #does merge vertex update the matrix every time a vertex merge or until all the items to be merged
     #have been determined
@@ -112,22 +113,25 @@ class Mesh:
             if(neighbor != v_0): #update the neighbors and its adjacent vertices
                 self.adj_matrix[neighbor,v_1] = False
                 self.adj_matrix[neighbor,v_0] = True
-                self.adj_matrix[v_0,neighbor] = True
+                self.adj_matrix[:,v_1] = False #update the adjacency matrix --> need to be aware of the boundary edges after pool
+                self.adj_matrix[v_1,:] = False
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
-        self.vertex_collapse.append(edge_id)
+        self.collapse_order.append(edge_id)
 
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
         self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
         self.image = self.image[self.vertex_mask]
+        self.update_history()
         self.edges = self.__update_edges()
         self.edge_counts = self.edges.shape[1]
-        self.history.append(np.vstack(self.vertex_collapse))
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
-        self.vertex_collapse = []
+        self.collapse_order = []
 
-    #getter method: to get vertex collapse
-    def vertex_collapse_order(self):
-        order = torch.cat((torch.asarray(self.vertex_collapse[:,0]),torch.asarray(self.vertex_collapse[:,1])))
-        return order
+    #keep track of which edges were collapsed during each iteration
+    #keep track in a dictionary for all the things that I need to keep track of 
+    #such as pool order, pool mask
+    def update_history(self):
+        order = torch.stack((self.edges[0,self.collapse_order],self.edges[1,self.collapse_order]))
+        self.history.append(order)

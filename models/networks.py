@@ -147,10 +147,11 @@ class HybridUnet(nn.Module):
         #=================================================================
         self.down_convs = down_convs
         self.up_convs = up_convs
-        self.bottleneck = nn.Sequential(
-            SplineConv(self.down_convs[-2],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda(),
-            SplineConv(self.down_convs[-1],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        )
+        # self.bottleneck = nn.Sequential(
+        #     SplineConv(self.down_convs[-2],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda(),
+        #     SplineConv(self.down_convs[-1],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        # )
+        self.bottleneck = spline_conv_block(self.down_convs[-2],self.down_convs[-1])
 
         #===========================================================
         # Regular UNet Decoder
@@ -192,7 +193,7 @@ class HybridUnet(nn.Module):
  
         pool_res = []
         for i in range(len(self.down_convs)-1):
-            image_size = image_size//4
+            image_size = image_size//2
             pool_res.append(image_size)
 
         encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs[:-1], pool_res, r_fe)
@@ -345,6 +346,15 @@ def rectangular_conv_block(in_channel,out_channel,kernel):
         nn.Conv2d(in_channel, out_channel, kernel_size=kernel,padding="same"),
         nn.ReLU(),
         nn.Conv2d(out_channel, out_channel, kernel_size=kernel,padding="same"),
+        nn.ReLU()
+    )
+    return conv
+
+def spline_conv_block(in_channel,out_channel):
+    conv = nn.Sequential(
+        SplineConv(in_channel,out_channel,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda().
+        nn.ReLU(),
+        SplineConv(out_channel,out_channel,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda().
         nn.ReLU()
     )
     return conv

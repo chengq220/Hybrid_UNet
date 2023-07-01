@@ -14,7 +14,7 @@ class MeshPool(nn.Module):
     def __call__(self, meshes):
         return self.forward(meshes)
 
-    #image is the image,fe is the image rep, meshes contains the mesh information
+    # image is the image,fe is the image rep, meshes contains the mesh information
     def forward(self, meshes):
         # self.__updated_fe = [[] for _ in range(len(meshes))]
         pool_threads = []
@@ -32,12 +32,11 @@ class MeshPool(nn.Module):
                 pool_threads[mesh_index].join()
         # return torch.stack(self.__out_image)
 
-
     def __pool_main(self, mesh_index):
         self.idx_vertex = []
         mesh = self.__meshes[mesh_index]
         image = mesh.image
-        features = torch.transpose(torch.cat((image[mesh.edges[0,:]],image[mesh.edges[1,:]]),dim=1),0,1)
+        features = torch.transpose(torch.cat((image[mesh.edges[0, :]], image[mesh.edges[1, :]]), dim=1), 0, 1)
         queue = self.__build_queue(features, mesh.edge_counts)
         mask = np.ones(mesh.edge_counts, dtype=bool)
         while mesh.vertex_count > self.__out_target:
@@ -46,14 +45,13 @@ class MeshPool(nn.Module):
             if mask[edge_id]:
                 self.__pool_edge(mesh, edge_id)
                 mask[edge_id] = False
-        #update all the information and apply all the masks
-
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
         if self.is_boundaries(mesh, edge_id):
             return False
         elif self.is_valid(mesh, edge_id):
+            print(str(mesh.edges[0, edge_id].item()) + ", " + str(mesh.edges[1, edge_id].item()))
             mesh.merge_vertex(edge_id)
             return True
         else:
@@ -66,19 +64,21 @@ class MeshPool(nn.Module):
         col_sums = mesh.adj_matrix.sum(dim=0)
 
         # Check if the edge's vertices have row sum or column sum less than the maximum
-        vertex1, vertex2 = mesh.edges[0,edge_id],mesh.edges[1,edge_id]
+        vertex1, vertex2 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
         is_boundary = row_sums[vertex1] < row_sums.max() and col_sums[vertex2] < col_sums.max()
         return is_boundary.item()
 
-
     @staticmethod
     def is_valid(mesh, edge_id):
-        #edges in coo
-        v_0,v_1 = mesh.edges[0,edge_id], mesh.edges[1,edge_id]
-        neighbor_v0 = set(mesh.edges[1,mesh.edges[0, :] == v_0].tolist())
-        neighbor_v1 = set(mesh.edges[1, mesh.edges[0, :] == v_1].tolist())
-        shared = neighbor_v0 & neighbor_v1 - set([v_0,v_1])
-        
+        # edges in coo
+        v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
+        n_0 = set(mesh.edges[1, mesh.edges[0, :] == v_0].tolist())
+        n_f_0 = set(mesh.edges[0, mesh.edges[1, :] == v_0].tolist())  # find all the undirected neighbors
+        neighbor_v0 = n_0.union(n_f_0)
+        n_1 = set(mesh.edges[1, mesh.edges[0, :] == v_1].tolist())
+        n_f_1 = set(mesh.edges[0, mesh.edges[1, :] == v_1].tolist())
+        neighbor_v1 = n_1.union(n_f_1)
+        shared = neighbor_v0 & neighbor_v1 - set([v_0, v_1])
         return len(shared) == 2
 
     def __build_queue(self, features, edges_count):
