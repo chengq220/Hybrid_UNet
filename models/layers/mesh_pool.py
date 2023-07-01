@@ -10,16 +10,14 @@ class MeshPool(nn.Module):
         super(MeshPool, self).__init__()
         self.__out_target = target
         self.__multi_thread = multi_thread
+        self.__meshes = None
 
     def __call__(self, meshes):
         return self.forward(meshes)
 
-    # image is the image,fe is the image rep, meshes contains the mesh information
     def forward(self, meshes):
-        # self.__updated_fe = [[] for _ in range(len(meshes))]
         pool_threads = []
         self.__meshes = meshes
-        # self.__out_image = []
         # iterate over batch
         for mesh_index in range(len(meshes)):
             if self.__multi_thread:
@@ -38,13 +36,13 @@ class MeshPool(nn.Module):
         image = mesh.image
         features = torch.transpose(torch.cat((image[mesh.edges[0, :]], image[mesh.edges[1, :]]), dim=1), 0, 1)
         queue = self.__build_queue(features, mesh.edge_counts)
-        mask = np.ones(mesh.edge_counts, dtype=bool)
         while mesh.vertex_count > self.__out_target:
             value, edge_id = heappop(queue)
             edge_id = int(edge_id)
-            if mask[edge_id]:
+            # make sure that the vertex have not been merged already
+            if mesh.vertex_mask[mesh.edges[1,edge_id]]:
                 self.__pool_edge(mesh, edge_id)
-                mask[edge_id] = False
+                # mask[edge_id] = False
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
