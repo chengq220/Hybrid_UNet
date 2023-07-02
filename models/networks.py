@@ -173,16 +173,14 @@ class HybridUnet(nn.Module):
     #         skips.append(fe)
     #         fe = self.maxpool(fe)
 
-    #    #change the channel to the last number
         fe = x 
-        r_fe = fe.permute(0,2,3,1)
-        image_size = r_fe.shape[1]*r_fe.shape[2]
+        image_size = fe.shape[2]*fe.shape[3]
        
         ##################################################
         #Mesh Unet with spline conv
         meshes = []
         #create mesh for the batch
-        for image in r_fe:
+        for image in fe:
             mesh = Mesh(file=image)
             meshes.append(mesh)
         meshes = np.array(meshes)
@@ -192,7 +190,7 @@ class HybridUnet(nn.Module):
             image_size = image_size//2
             pool_res.append(image_size)
 
-        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, pool_res, r_fe)
+        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, pool_res)
         mesh_before_pool = encoder(meshes)
         print(meshes[0].image.shape)
         # decoder = MeshDecoder(unrolls,self.up_convs)
@@ -216,7 +214,7 @@ class HybridUnet(nn.Module):
         return self.forward(x)
 
 class MeshEncoder(nn.Module):
-    def __init__(self, input_channel, convs, pool_res, images):
+    def __init__(self, input_channel, convs, pool_res):
         super(MeshEncoder, self).__init__()
         in_channel = input_channel
         in_channel = 3

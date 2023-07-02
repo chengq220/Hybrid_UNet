@@ -7,9 +7,9 @@ from models.layers.mesh_pool import MeshPool
 
 class Mesh:
     def __init__(self, file=None):
-        self.image = file.view(file.shape[0]*file.shape[1],file.shape[2])
+        self.image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
         self.vertex_count = None
-        self.vs, self.faces = self.__fill_mesh2(file.shape[0],file.shape[1])
+        self.vs, self.faces = self.__fill_mesh2(file.shape[1],file.shape[2])
         #return the directed edges in the coo format
         self.edges, self.edge_counts = self.__get_edges(self.faces)
         self.adj_matrix = self.__adjacency(self.edges)
