@@ -44,9 +44,10 @@ class MeshPool(nn.Module):
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
-        if self.is_boundaries(mesh, edge_id):
-            return False
-        elif self.is_valid(mesh, edge_id):
+        # if self.is_boundaries(mesh, edge_id):
+        #     return False
+        # elif self.is_valid(mesh, edge_id):
+        if self.is_valid(mesh,edge_id):
             mesh.merge_vertex(edge_id)
             return True
         else:

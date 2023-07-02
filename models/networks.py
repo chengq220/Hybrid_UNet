@@ -143,14 +143,10 @@ class HybridUnet(nn.Module):
         self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
 
         #=================================================================
-        #the mesh unet
+        #the mesh unet [params]
         #=================================================================
         self.down_convs = down_convs
         self.up_convs = up_convs
-        self.bottleneck = nn.Sequential(
-            SplineConv(self.down_convs[-2],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda(),
-            SplineConv(self.down_convs[-1],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        )
 
         #===========================================================
         # Regular UNet Decoder
@@ -181,6 +177,7 @@ class HybridUnet(nn.Module):
         fe = x 
         r_fe = fe.permute(0,2,3,1)
         image_size = r_fe.shape[1]*r_fe.shape[2]
+       
         ##################################################
         #Mesh Unet with spline conv
         meshes = []
@@ -195,11 +192,9 @@ class HybridUnet(nn.Module):
             image_size = image_size//2
             pool_res.append(image_size)
 
-        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs[:-1], pool_res, r_fe)
+        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, pool_res, r_fe)
         mesh_before_pool = encoder(meshes)
-
-        #fe = self.bottleneck(fe)
-
+        print(meshes[0].image.shape)
         # decoder = MeshDecoder(unrolls,self.up_convs)
         # fe = decoder((fe, meshes), before_pool[:-1])
 
@@ -227,24 +222,20 @@ class MeshEncoder(nn.Module):
         in_channel = 3
         self.down = nn.ModuleList()
         for idx, out_channel in enumerate(convs):
-            down = DownConv(in_channel,out_channel,pool_res[idx])
+            if idx > len(pool_res)-1:
+                down = DownConv(in_channel,convs[-1],None)
+            else:
+                down = DownConv(in_channel,out_channel,pool_res[idx])
             self.down.append(down)
             in_channel = out_channel
 
     def forward(self, meshes):
-        # for down in self.down:
-        before_pool = self.down[0](meshes)
-        # before_pool, fe, out_mask, pool_order = self.down[1](fe,meshes)
-        # before_pool, out_image, out_mask,pool_order = self.down[1](out_image,meshes)
-            # encoder_outs.append(before_pool)
-            # mask.append(out_mask)
-            # order.append(pool_order)
-            # fe = out_image
-        exit()
+        for down in self.down:
+            before_pool = down(meshes)
         return before_pool
 
-    def __call__(self, x):
-        return self.forward(x)
+    def __call__(self, meshes):
+        return self.forward(meshes)
 
 ## need to change it so it takes in pool order and pool mask
 class MeshDecoder(nn.Module):
@@ -276,7 +267,9 @@ class DownConv(nn.Module):
         super(DownConv, self).__init__()
         self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.pool = MeshPool(pool)
+        self.pool = None
+        if(pool is not None):
+            self.pool = MeshPool(pool)
 
     def __call__(self, meshes):
         return self.forward(meshes)
@@ -295,9 +288,10 @@ class DownConv(nn.Module):
             v_f = F.relu(v_f)
             before_pool.append(v_f)
             mesh.image = v_f
-        before_pool = torch.stack(before_pool)
-        self.pool(meshes)
-        print(meshes[0].vertex_count)
+
+        if self.pool is not None:
+            before_pool = torch.stack(before_pool)
+            self.pool(meshes)
         return before_pool
 
 class UpConv(nn.Module):
