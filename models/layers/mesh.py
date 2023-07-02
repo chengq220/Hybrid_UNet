@@ -15,7 +15,10 @@ class Mesh:
         self.adj_matrix = self.__adjacency(self.edges)
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
         self.collapse_order = []
-        self.history = []
+        self.history_data = {
+            'vertex_mask': [],
+            'collapse_order': []
+        }
 
     def __fill_mesh2(self,length, width):
         size = length * width
@@ -129,9 +132,18 @@ class Mesh:
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
         self.collapse_order = []
 
-    #keep track of which edges were collapsed during each iteration
-    #keep track in a dictionary for all the things that I need to keep track of 
-    #such as pool order, pool mask
+    #update the dictionary that contains all the information
     def update_history(self):
-        order = torch.stack((self.edges[0,self.collapse_order],self.edges[1,self.collapse_order]))
-        self.history.append(order)
+        pool_order = torch.stack((self.edges[0,self.collapse_order],self.edges[1,self.collapse_order]))
+        v_mask_history = self.history_data.get('vertex_mask', [])
+        v_mask_history.append(self.vertex_mask)
+        pool_history = self.history_data.get('collapse_order', [])
+        pool_history.append(pool_order)
+        self.history_data['vertex_mask'] = v_mask_history
+        self.history_data['collapse_order'] = pool_history
+
+    #get the information needed for the unpool operation
+    def unroll(self):
+        vertex_mask = self.history_data['vertex_mask'].pop()
+        pool_order = self.history_data['collapse_order'].pop()
+        return vertex_mask, pool_order
