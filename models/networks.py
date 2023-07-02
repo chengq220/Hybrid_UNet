@@ -147,11 +147,10 @@ class HybridUnet(nn.Module):
         #=================================================================
         self.down_convs = down_convs
         self.up_convs = up_convs
-        # self.bottleneck = nn.Sequential(
-        #     SplineConv(self.down_convs[-2],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda(),
-        #     SplineConv(self.down_convs[-1],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        # )
-        self.bottleneck = spline_conv_block(self.down_convs[-2],self.down_convs[-1])
+        self.bottleneck = nn.Sequential(
+            SplineConv(self.down_convs[-2],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda(),
+            SplineConv(self.down_convs[-1],self.down_convs[-1],dim=3,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        )
 
         #===========================================================
         # Regular UNet Decoder
@@ -197,7 +196,7 @@ class HybridUnet(nn.Module):
             pool_res.append(image_size)
 
         encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs[:-1], pool_res, r_fe)
-        fe, before_pool, mask, order = encoder(meshes)
+        mesh_before_pool = encoder(meshes)
 
         #fe = self.bottleneck(fe)
 
@@ -232,13 +231,9 @@ class MeshEncoder(nn.Module):
             self.down.append(down)
             in_channel = out_channel
 
-    def forward(self, x):
-        encoder_outs = []
-        mask = []
-        order = []
-        meshes = x
+    def forward(self, meshes):
         # for down in self.down:
-        before_pool, fe, out_mask,pool_order = self.down[0](meshes)
+        before_pool = self.down[0](meshes)
         # before_pool, fe, out_mask, pool_order = self.down[1](fe,meshes)
         # before_pool, out_image, out_mask,pool_order = self.down[1](out_image,meshes)
             # encoder_outs.append(before_pool)
@@ -246,10 +241,7 @@ class MeshEncoder(nn.Module):
             # order.append(pool_order)
             # fe = out_image
         exit()
-        mask = torch.stack(mask)
-        order = torch.stack(order)
-        encoder_outs = torch.stack(encoder_outs)
-        return out_image, encoder_outs, mask, order
+        return before_pool
 
     def __call__(self, x):
         return self.forward(x)
@@ -282,22 +274,21 @@ class MeshDecoder(nn.Module):
 class DownConv(nn.Module):
     def __init__(self, in_channels, out_channels, pool):
         super(DownConv, self).__init__()
-        self.pool = None
         self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.pool = MeshPool(pool)
 
-    def __call__(self, x):
-        return self.forward(x)
+    def __call__(self, meshes):
+        return self.forward(meshes)
 
-    def forward(self, x):
-        meshes = x
+    def forward(self, meshes):
         before_pool = []
         #Spline Convolution
         for idx,mesh in enumerate(meshes):     
             v_f = mesh.image
-            edges = mesh.edges.cuda()
-            edge_attribute = mesh.get_attributes().cuda()
+            edges, edge_attribute = mesh.get_undirected_attributes()
+            edges = edges.cuda()
+            edge_attribute = edge_attribute.cuda()
             v_f = self.conv1(v_f,edges,edge_attribute)
             v_f = F.relu(v_f)
             v_f = self.conv2(v_f,edges,edge_attribute)
@@ -346,15 +337,6 @@ def rectangular_conv_block(in_channel,out_channel,kernel):
         nn.Conv2d(in_channel, out_channel, kernel_size=kernel,padding="same"),
         nn.ReLU(),
         nn.Conv2d(out_channel, out_channel, kernel_size=kernel,padding="same"),
-        nn.ReLU()
-    )
-    return conv
-
-def spline_conv_block(in_channel,out_channel):
-    conv = nn.Sequential(
-        SplineConv(in_channel,out_channel,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda().
-        nn.ReLU(),
-        SplineConv(out_channel,out_channel,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda().
         nn.ReLU()
     )
     return conv

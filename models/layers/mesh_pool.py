@@ -28,7 +28,6 @@ class MeshPool(nn.Module):
         if self.__multi_thread:
             for mesh_index in range(len(meshes)):
                 pool_threads[mesh_index].join()
-        # return torch.stack(self.__out_image)
 
     def __pool_main(self, mesh_index):
         self.idx_vertex = []
@@ -42,14 +41,12 @@ class MeshPool(nn.Module):
             # make sure that the vertex have not been merged already
             if mesh.vertex_mask[mesh.edges[1,edge_id]]:
                 self.__pool_edge(mesh, edge_id)
-                # mask[edge_id] = False
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
         if self.is_boundaries(mesh, edge_id):
             return False
         elif self.is_valid(mesh, edge_id):
-            print(str(mesh.edges[0, edge_id].item()) + ", " + str(mesh.edges[1, edge_id].item()))
             mesh.merge_vertex(edge_id)
             return True
         else:

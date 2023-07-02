@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from mesh_pool import MeshPool
+from models.layers.mesh_pool import MeshPool
 # from mesh_unpool import MeshUnpool
 # import time
 
