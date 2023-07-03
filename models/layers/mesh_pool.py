@@ -39,30 +39,27 @@ class MeshPool(nn.Module):
             value, edge_id = heappop(queue)
             edge_id = int(edge_id)
             # make sure that the vertex have not been merged already
-            if mesh.vertex_mask[mesh.edges[1,edge_id]]:
+            if mesh.vertex_mask[mesh.edges[1,edge_id]] and mesh.vertex_mask[mesh.edges[0,edge_id]]:
                 self.__pool_edge(mesh, edge_id)
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
-        # if self.is_boundaries(mesh, edge_id):
-        #     return False
-        # elif self.is_valid(mesh, edge_id):
         if self.is_valid(mesh,edge_id):
             mesh.merge_vertex(edge_id)
             return True
         else:
             return False
 
-    @staticmethod
-    def is_boundaries(mesh, edge_id):
-        # Compute row sums and column sums of the adjacency matrix
-        row_sums = mesh.adj_matrix.sum(dim=1)
-        col_sums = mesh.adj_matrix.sum(dim=0)
+    # @staticmethod
+    # def is_boundaries(mesh, edge_id):
+    #     # Compute row sums and column sums of the adjacency matrix
+    #     row_sums = mesh.adj_matrix.sum(dim=1)
+    #     col_sums = mesh.adj_matrix.sum(dim=0)
 
-        # Check if the edge's vertices have row sum or column sum less than the maximum
-        vertex1, vertex2 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
-        is_boundary = row_sums[vertex1] < row_sums.max() and col_sums[vertex2] < col_sums.max()
-        return is_boundary.item()
+    #     # Check if the edge's vertices have row sum or column sum less than the maximum
+    #     vertex1, vertex2 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
+    #     is_boundary = row_sums[vertex1] < row_sums.max() and col_sums[vertex2] < col_sums.max()
+    #     return is_boundary.item()
 
     @staticmethod
     def is_valid(mesh, edge_id):

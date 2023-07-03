@@ -5,7 +5,7 @@ import functools
 from torch.optim import lr_scheduler
 import torch.nn.functional as F
 from models.layers.mesh_pool import MeshPool
-# from models.layers.mesh_unpool import MeshUnpool
+from models.layers.mesh_unpool import MeshUnpool
 from models.layers.mesh import Mesh
 import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
@@ -192,9 +192,10 @@ class HybridUnet(nn.Module):
 
         encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, pool_res)
         mesh_before_pool = encoder(meshes)
-        print(meshes[0].image.shape)
-        # decoder = MeshDecoder(unrolls,self.up_convs)
-        # fe = decoder((fe, meshes), before_pool[:-1])
+        # print(meshes[0].image.shape)
+        decoder = MeshDecoder(self.up_convs)
+        decoder(meshes, mesh_before_pool[:-1])
+        print(meshes[0].image.shape) #should be in the form of [batch,channel,height,width]
 
 
         ##################################################################
@@ -228,8 +229,9 @@ class MeshEncoder(nn.Module):
             in_channel = out_channel
 
     def forward(self, meshes):
+        before_pool = []
         for down in self.down:
-            before_pool = down(meshes)
+            before_pool.append(down(meshes))
         return before_pool
 
     def __call__(self, meshes):
@@ -237,25 +239,20 @@ class MeshEncoder(nn.Module):
 
 ## need to change it so it takes in pool order and pool mask
 class MeshDecoder(nn.Module):
-    def __init__(self, unrolls, up_convs):
+    def __init__(self, up_convs):
         super(MeshDecoder, self).__init__()
         self.up = nn.ModuleList()
-        self.conv1 = UpConv(up_convs[0],up_convs[1],unrolls[0])
         in_channel = up_convs[0]
         up_convs = up_convs[1:]
-
         for idx,out_channel in enumerate(up_convs):
-            up = UpConv(in_channel, out_channel,unrolls[idx])
+            up = UpConv(in_channel, out_channel)
             self.up.append(up)
             in_channel = out_channel
 
-    def forward(self, x, encoder_outs, mask, order):
-        fe, meshes = x
+    def forward(self, meshes, encoder_outs):
         encoder_outs = encoder_outs[::-1]
-        # fe = self.conv1((fe,meshes),encoder_outs[0])
         for idx, up in enumerate(self.up):
-            fe = up((fe,meshes),encoder_outs[idx])
-        return fe
+            up(meshes,encoder_outs[idx])
 
     def __call__(self, x, encoder_outs):
         return self.forward(x, encoder_outs)
@@ -284,36 +281,44 @@ class DownConv(nn.Module):
             v_f = F.relu(v_f)
             v_f = self.conv2(v_f,edges,edge_attribute)
             v_f = F.relu(v_f)
-            before_pool.append(v_f)
+            if self.pool is not None:
+                before_pool.append(v_f)
+                mesh.update_dictionary(edges,"edge")
+                mesh.update_dictionary(edge_attribute,"edge_feature")
             mesh.image = v_f
 
         if self.pool is not None:
-            before_pool = torch.stack(before_pool)
             self.pool(meshes)
-        return before_pool
+            before_pool = torch.stack(before_pool)
+            return before_pool
 
 class UpConv(nn.Module):
-    def __init__(self, in_channels, out_channels,unroll): #what about unroll and meshunpool
+    def __init__(self, in_channels, out_channels):
         super(UpConv, self).__init__()
-        self.conv1 = MeshConv(in_channels,out_channels)
-        self.conv2 = MeshConv(out_channels,out_channels)
+        self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.unpool = MeshUnpool()
 
-    def __call__(self, pool_vmask,pooled_image, pool_order, x, from_down=None):
-        return self.forward(pool_vmask,pooled_image,pool_order, x, from_down)
+    def __call__(self, meshes, skips):
+        return self.forward(meshes,skips)
 
-    def forward(self, pool_mask, pooled_image, pooled_order, x, from_down):
-        from_up, meshes = x
-        x1 = from_up
-        image = self.unpool(from_down,pool_mask,pooled_image,pooled_order)
-        x1 = self.unpool(x1,meshes)
-        x1 = self.conv1(x1,meshes).squeeze(3)
-        x1 = torch.cat((x1,from_down),1)
-        x1 = self.conv1(x1,meshes)
-        x1 = F.relu(x1)
-        x1 = self.conv2(x1,meshes)
-        x1 = F.relu(x1).squeeze(3)
-        return x1
+    def forward(self, meshes,skips):
+        edges, edge_attributes = self.unpool(meshes)
+        for idx,mesh in enumerate(meshes):     
+            v_f = mesh.image
+            edge = edges[idx]
+            edge = edge.cuda()
+            edge_attribute = edge_attributes[idx]
+            edge_attribute = edge_attribute.cuda()
+            v_f = self.conv1(v_f,edge,edge_attribute)
+            v_f = F.relu(v_f)
+            v_f = torch.cat((v_f,skips[idx]),1)
+            v_f = self.conv1(v_f,edge,edge_attribute)
+            v_f = F.relu(v_f)
+            v_f = self.conv2(v_f,edge,edge_attribute)
+            v_f = F.relu(v_f)
+            mesh.image = v_f
+
 
 def reset_params(model): # todo replace with my init
     for i, m in enumerate(model.modules()):

@@ -1,25 +1,28 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from utils import pad
 
 class MeshUnpool(nn.Module):
-    def __init__(self,pad):
+    def __init__(self):
         super(MeshUnpool, self).__init__()
-        self.__pad = pad
 
-    def __call__(self, out,mask, in_images, vc_order):
-        for i in range(len(vc_order)):
-            vc_order[i] = pad(vc_order[i],self.__pad)
-        vc_order = np.stack(vc_order)
-        return self.forward(out,mask,in_images,vc_order)
+    def __call__(self, meshes):
+        return self.forward(meshes)
 
-    def forward(self, out,mask,in_images,vc_order):
-        out_images = torch.zeros_like(out)
-        # mask = torch.from_numpy(mask)
-        for idx in range(out.shape[0]):
-            out_images[idx][mask[idx]] = in_images[idx]
-        #reconstruct the image in reverse order
-        for edge in vc_order[::-1]:
-            out_images[:,edge[:,1]] = out_images[:,edge[:,0]]
-        return out_images
+    def forward(self, meshes):
+        edges = []
+        edge_features = []
+        for mesh in meshes: #iterate over each mesh
+            img = mesh.image
+            mask, order, edge, edge_feature = mesh.unroll()
+            edges.append(edge)
+            edge_features.append(edge_feature)
+            v_f = torch.zeros(mask.shape[0],img.shape[1]).to(img.device)
+            v_f[mask] = img
+            #reconstruct the image in reverse order
+            for idx in range(len(order[0])):
+                t = order[1,len(order[0])-idx-1]
+                f = order[0,len(order[0])-idx-1]
+                v_f[t] = v_f[f]
+            mesh.image = v_f
+        return edges, edge_features

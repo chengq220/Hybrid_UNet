@@ -17,7 +17,9 @@ class Mesh:
         self.collapse_order = []
         self.history_data = {
             'vertex_mask': [],
-            'collapse_order': []
+            'collapse_order': [],
+            'edge':[],
+            'edge_feature':[]
         }
 
     def __fill_mesh2(self,length, width):
@@ -108,7 +110,7 @@ class Mesh:
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
 
         max_tensor = torch.max(self.image[v_0], self.image[v_1])
-        with torch.no_grad():
+        with torch.no_grad(): #no sure if this is correct ######################
             self.image[v_0] = max_tensor
 
         neighbors = torch.nonzero(self.adj_matrix[v_1]).squeeze(1)
@@ -142,8 +144,17 @@ class Mesh:
         self.history_data['vertex_mask'] = v_mask_history
         self.history_data['collapse_order'] = pool_history
 
+    #update dictionary with informations like edge connectivity and vertex values
+    def update_dictionary(self,list,category):
+        history = self.history_data.get(category,[])
+        history.append(list)
+        self.history_data[category] = history
+
+
     #get the information needed for the unpool operation
     def unroll(self):
         vertex_mask = self.history_data['vertex_mask'].pop()
         pool_order = self.history_data['collapse_order'].pop()
-        return vertex_mask, pool_order
+        edges = self.history_data['edge'].pop()
+        edge_features = self.history_data['edge_feature'].pop()
+        return vertex_mask, pool_order, edges, edge_features
