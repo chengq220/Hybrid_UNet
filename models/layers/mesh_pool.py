@@ -50,17 +50,6 @@ class MeshPool(nn.Module):
         else:
             return False
 
-    # @staticmethod
-    # def is_boundaries(mesh, edge_id):
-    #     # Compute row sums and column sums of the adjacency matrix
-    #     row_sums = mesh.adj_matrix.sum(dim=1)
-    #     col_sums = mesh.adj_matrix.sum(dim=0)
-
-    #     # Check if the edge's vertices have row sum or column sum less than the maximum
-    #     vertex1, vertex2 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
-    #     is_boundary = row_sums[vertex1] < row_sums.max() and col_sums[vertex2] < col_sums.max()
-    #     return is_boundary.item()
-
     @staticmethod
     def is_valid(mesh, edge_id):
         # edges in coo

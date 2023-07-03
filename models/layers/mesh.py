@@ -110,15 +110,14 @@ class Mesh:
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
 
         max_tensor = torch.max(self.image[v_0], self.image[v_1])
-        with torch.no_grad(): #no sure if this is correct ######################
-            self.image[v_0] = max_tensor
+        self.image[v_0].data = max_tensor
 
         neighbors = torch.nonzero(self.adj_matrix[v_1]).squeeze(1)
         for neighbor in neighbors:
             if(neighbor != v_0): #update the neighbors and its adjacent vertices
                 self.adj_matrix[neighbor,v_1] = False
                 self.adj_matrix[neighbor,v_0] = True
-                self.adj_matrix[:,v_1] = False #update the adjacency matrix --> need to be aware of the boundary edges after pool
+                self.adj_matrix[:,v_1] = False #update the adjacency matrix
                 self.adj_matrix[v_1,:] = False
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
