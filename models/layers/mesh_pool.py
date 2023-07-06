@@ -17,6 +17,7 @@ class MeshPool(nn.Module):
 
     def forward(self, meshes):
         pool_threads = []
+        self.out = []
         self.__meshes = meshes
         # iterate over batch
         for mesh_index in range(len(meshes)):
@@ -28,11 +29,12 @@ class MeshPool(nn.Module):
         if self.__multi_thread:
             for mesh_index in range(len(meshes)):
                 pool_threads[mesh_index].join()
+        return self.__meshes
+
 
     def __pool_main(self, mesh_index):
-        self.idx_vertex = []
         mesh = self.__meshes[mesh_index]
-        image = mesh.image
+        image = mesh.get_feature()
         features = torch.transpose(torch.cat((image[mesh.edges[0, :]], image[mesh.edges[1, :]]), dim=1), 0, 1)
         queue = self.__build_queue(features, mesh.edge_counts)
         while mesh.vertex_count > self.__out_target:

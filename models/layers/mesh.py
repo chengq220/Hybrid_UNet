@@ -7,7 +7,7 @@ from models.layers.mesh_pool import MeshPool
 
 class Mesh:
     def __init__(self, file=None):
-        self.image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
+        self.__image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
         self.vertex_count = None
         self.vs, self.faces = self.__fill_mesh2(file.shape[1],file.shape[2])
         #return the directed edges in the coo format
@@ -107,14 +107,17 @@ class Mesh:
 
     #calculate the attributes in 2d space of each edges
     def get_attributes(self,u_e):
-        feature = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
-        return feature
-
+        try:
+            feature = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
+            return feature
+        except:
+            print("get attribute error occured")
+            exit()
     #collapse the two vertices together and update the matrix 
     def merge_vertex(self,edge_id):
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
-        max_tensor = torch.max(self.image[v_0], self.image[v_1])
-        self.image[v_0].data = max_tensor
+        max_tensor = torch.max(self.__image[v_0], self.__image[v_1])
+        self.__image[v_0].data = max_tensor
 
         neighbors = torch.nonzero(self.adj_matrix[v_1]).squeeze(1)
         for neighbor in neighbors:
@@ -130,8 +133,9 @@ class Mesh:
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
         self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
-        self.image = self.image[self.vertex_mask]
+        self.__image = self.__image[self.vertex_mask]
         self.update_history()
+        self.vs = self.vs[self.vertex_mask]
         self.edges = self.__update_edges()
         self.edge_counts = self.edges.shape[1]
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
@@ -162,6 +166,13 @@ class Mesh:
         history.append(list)
         self.history_data[category] = history
 
+    #setter method to update image
+    def update_feature(self,img):
+        self.__image = img
+
+    #getter method to get the image
+    def get_feature(self):
+        return self.__image
 
     #get the information needed for the unpool operation
     def unroll(self):
