@@ -4,10 +4,10 @@ python train.py \
 --dataroot datasets/CVC-ClinicDB \
 --name Medical_Imaging_multgpus \
 --arch hybrid \
---resize 256 256 \
+--resize 64 64 \
 --ncf 64 128 256 512 1024 \
---gpu_ids 1 \
---batch_size 5 \
+--gpu_ids 1,2 \
+--batch_size 4 \
 --lr 0.00001 \
 --num_aug 20 \
 --niter 125 \

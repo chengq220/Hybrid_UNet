@@ -16,12 +16,13 @@ class Mesh:
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
         self.collapse_order = []
         self.history_data = {
+            'vertex': [],
             'vertex_mask': [],
             'collapse_order': [],
-            'edge':[],
-            'edge_feature':[]
+            'edge':[]
         }
 
+    #create a mesh
     def __fill_mesh2(self,length, width):
         size = length * width
         self.vertex_count = size
@@ -98,17 +99,20 @@ class Mesh:
         edges = torch.stack([edges[:, 0],edges[:,1]],dim=0)
         return edges
 
-    def get_undirected_attributes(self):
+    #the edge stored is directed, this gives the undirected edges
+    def get_undirected_edges(self):
         edge_flipped = torch.stack((self.edges[1, :], self.edges[0, :]))
         u_e = torch.cat((self.edges,edge_flipped),dim=1)
-        attribute = self.vs[u_e[0, :]] - self.vs[u_e[1, :]]
-        return u_e, attribute
+        return u_e
 
-    #does merge vertex update the matrix every time a vertex merge or until all the items to be merged
-    #have been determined
+    #calculate the attributes in 2d space of each edges
+    def get_attributes(self,u_e):
+        feature = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
+        return feature
+
+    #collapse the two vertices together and update the matrix 
     def merge_vertex(self,edge_id):
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
-
         max_tensor = torch.max(self.image[v_0], self.image[v_1])
         self.image[v_0].data = max_tensor
 
@@ -135,13 +139,22 @@ class Mesh:
 
     #update the dictionary that contains all the information
     def update_history(self):
-        pool_order = torch.stack((self.edges[0,self.collapse_order],self.edges[1,self.collapse_order]))
+        #update vertex mask history
         v_mask_history = self.history_data.get('vertex_mask', [])
         v_mask_history.append(self.vertex_mask)
+
+        #update vertex history
+        vertex_history = self.history_data.get('vertex',[])
+        vertex_history.append(self.vs)
+
+        #update pool history
+        pool_order = torch.stack((self.edges[0,self.collapse_order],self.edges[1,self.collapse_order]))
         pool_history = self.history_data.get('collapse_order', [])
         pool_history.append(pool_order)
+
         self.history_data['vertex_mask'] = v_mask_history
         self.history_data['collapse_order'] = pool_history
+        self.history_data['vertex'] = vertex_history
 
     #update dictionary with informations like edge connectivity and vertex values
     def update_dictionary(self,list,category):
@@ -152,8 +165,8 @@ class Mesh:
 
     #get the information needed for the unpool operation
     def unroll(self):
+        vertex = self.history_data['vertex'].pop()
         vertex_mask = self.history_data['vertex_mask'].pop()
         pool_order = self.history_data['collapse_order'].pop()
         edges = self.history_data['edge'].pop()
-        edge_features = self.history_data['edge_feature'].pop()
-        return vertex_mask, pool_order, edges, edge_features
+        return vertex, vertex_mask, pool_order, edges

@@ -167,13 +167,14 @@ class HybridUnet(nn.Module):
         #################################################
         # Regular UNET downsampling
         fe = x
-        skips = []
-        for conv in self.rec_down:
-            fe = conv(fe)
-            skips.append(fe)
-            fe = self.maxpool(fe)
+        # skips = []
+        # for conv in self.rec_down:
+        #     fe = conv(fe)
+        #     skips.append(fe)
+        #     fe = self.maxpool(fe)
 
-        image_size = fe.shape[2]*fe.shape[3]
+        # image_size = fe.shape[2]*fe.shape[3]
+        image_size = 4096
         ##################################################
         #Mesh Unet with spline conv
         meshes = []
@@ -190,10 +191,11 @@ class HybridUnet(nn.Module):
 
         encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, pool_res)
         mesh_before_pool = encoder(meshes)
+        print(meshes[0].image.shape)
         ##### issues with decoder
+        exit()
         decoder = MeshDecoder(self.up_convs)
         decoder(meshes, mesh_before_pool[:-1])
-        exit()
 
         out = []
         for mesh in meshes:
@@ -202,14 +204,15 @@ class HybridUnet(nn.Module):
         fe = out.reshape(out.shape[0],out.shape[1],fe.shape[2],fe.shape[3])
 
 
-        ##################################################################
-        # Regular Unet UpSampling
-        skips = skips[::-1]
-        for i in range(len(self.rec_up_conv)):
-            fe = self.rec_up_conv[i](fe)
-            fe = torch.cat((fe, skips[i]),1)
-            fe = self.conv[i](fe)
-        fe = self.output(fe).squeeze(1)
+        # ##################################################################
+        # # Regular Unet UpSampling
+        # skips = skips[::-1]
+        # for i in range(len(self.rec_up_conv)):
+        #     fe = self.rec_up_conv[i](fe)
+        #     fe = torch.cat((fe, skips[i]),1)
+        #     fe = self.conv[i](fe)
+        # fe = self.output(fe).squeeze(1)
+        exit()
         return fe
 
     def __call__self(self,x):
@@ -219,6 +222,7 @@ class MeshEncoder(nn.Module):
     def __init__(self, input_channel, convs, pool_res):
         super(MeshEncoder, self).__init__()
         in_channel = input_channel
+        in_channel = 3
         self.down = nn.ModuleList()
         for idx, out_channel in enumerate(convs):
             if idx > len(pool_res)-1:
@@ -230,12 +234,70 @@ class MeshEncoder(nn.Module):
 
     def forward(self, meshes):
         before_pool = []
-        for down in self.down:
+        for down in self.down[:-1]:
             before_pool.append(down(meshes))
-        return before_pool
+        # return before_pool
+        conv1 = SplineConv(512,1024,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
+        conv2 = SplineConv(1024, 1024, dim=2 ,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        for idx,mesh in enumerate(meshes):
+            print(idx)     
+            v_f = mesh.image
+            edges = mesh.get_undirected_edges()
+            edge_attribute = mesh.get_attributes(edges).cuda()
+            print(v_f.shape)
+            print(edges[0].shape)
+            print(edge_attribute.shape)
+            # max_value = torch.max(edge_attribute)
+        #     # print(max_value.item())
+        #     # max_value = torch.max(edges)
+        #     # print(max_value.item())
+            # v_f = conv1(v_f,edges.cuda(),edge_attribute)
+            # v_f = F.relu(v_f)
+            # print(v_f.shape)
+        # v_f = meshes[1].image
+        # edges = meshes[1].get_undirected_edges()
+        # edge_attribute = meshes[1].get_attributes(edges)
+        # v_f = conv1(v_f.cpu(),edges,edge_attribute)
+        # return before_pool
 
     def __call__(self, meshes):
         return self.forward(meshes)
+
+class DownConv(nn.Module):
+    def __init__(self, in_channels, out_channels, pool):
+        super(DownConv, self).__init__()
+        self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.pool = None
+        if(pool is not None):
+            self.pool = MeshPool(pool)
+
+    def __call__(self, meshes):
+        return self.forward(meshes)
+
+    def forward(self, meshes):
+        before_pool = []
+        #Spline Convolution
+        for idx,mesh in enumerate(meshes):     
+            v_f = mesh.image
+            edges = mesh.get_undirected_edges()
+            edge_attribute = mesh.get_attributes(edges).cuda()
+            v_f = self.conv1(v_f,edges.cuda(),edge_attribute)
+            v_f = F.relu(v_f)
+            mesh.image = v_f
+            edge_attribute = mesh.get_attributes(edges).cuda()
+            v_f = self.conv2(v_f,edges.cuda(),edge_attribute)
+            v_f = F.relu(v_f)
+            if self.pool is not None:
+                before_pool.append(v_f)
+                mesh.update_dictionary(edges,"edge")
+            mesh.image = v_f
+
+        if self.pool is not None:
+            self.pool(meshes)
+            before_pool = torch.stack(before_pool)
+            return before_pool
+
 
 class MeshDecoder(nn.Module):
     def __init__(self, up_convs):
@@ -250,54 +312,17 @@ class MeshDecoder(nn.Module):
 
     def forward(self, meshes, encoder_outs):
         encoder_outs = encoder_outs[::-1]
-        # for idx, up in enumerate(self.up):
-        #     up(meshes,encoder_outs[idx])
-        self.up[0](meshes,encoder_outs[0])
-        self.up[1](meshes,encoder_outs[1])
+        for idx, up in enumerate(self.up):
+            up(meshes,encoder_outs[idx])
 
     def __call__(self, x, encoder_outs):
         return self.forward(x, encoder_outs)
 
-class DownConv(nn.Module):
-    def __init__(self, in_channels, out_channels, pool):
-        super(DownConv, self).__init__()
-        self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.pool = None
-        if(pool is not None):
-            self.pool = MeshPool(pool)
-
-    def __call__(self, meshes):
-        return self.forward(meshes)
-
-    def forward(self, meshes):
-        before_pool = []
-        #Spline Convolution
-        for idx,mesh in enumerate(meshes):     
-            v_f = mesh.image
-            edges, edge_attribute = mesh.get_undirected_attributes()
-            edges = edges.cuda()
-            edge_attribute = edge_attribute.cuda()
-            v_f = self.conv1(v_f,edges,edge_attribute)
-            v_f = F.relu(v_f)
-            v_f = self.conv2(v_f,edges,edge_attribute)
-            v_f = F.relu(v_f)
-            if self.pool is not None:
-                before_pool.append(v_f)
-                mesh.update_dictionary(edges,"edge")
-                mesh.update_dictionary(edge_attribute,"edge_feature")
-            mesh.image = v_f
-
-        if self.pool is not None:
-            self.pool(meshes)
-            before_pool = torch.stack(before_pool)
-            return before_pool
-
 class UpConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(UpConv, self).__init__()
-        self.conv1 = SplineConv(in_channels,out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cpu()
-        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cpu()
+        self.conv1 = SplineConv(in_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.unpool = MeshUnpool()
 
     def __call__(self, meshes, skips):
@@ -305,13 +330,12 @@ class UpConv(nn.Module):
 
     def forward(self, meshes,skips):
         edges, edge_attributes = self.unpool(meshes)
-        print(meshes[0].image.shape)
-        for idx,mesh in enumerate(meshes):    
-            v_f = mesh.image.cpu()
+        for idx,mesh in enumerate(meshes): 
+            v_f = mesh.image
             edge = edges[idx]
-            edge = edge.cpu()
+            edge = edge.cuda()
             edge_attribute = edge_attributes[idx]
-            edge_attribute = edge_attribute.cpu()
+            edge_attribute = edge_attribute.cuda()
             v_f = self.conv1(v_f,edge,edge_attribute)
             v_f = F.relu(v_f)
             v_f = torch.cat((v_f,skips[idx]),1)
@@ -319,9 +343,7 @@ class UpConv(nn.Module):
             v_f = F.relu(v_f)
             v_f = self.conv2(v_f,edge,edge_attribute)
             v_f = F.relu(v_f)
-            exit()
-            # mesh.image = v_f
-        exit()
+            mesh.image = v_f
 
 
 def reset_params(model): # todo replace with my init
