@@ -10,13 +10,9 @@ class MeshUnpool(nn.Module):
         return self.forward(meshes)
 
     def forward(self, meshes):
-        edges = []
-        edge_features = []
         for mesh in meshes: #iterate over each mesh
-            img = mesh.image
-            mask, order, edge, edge_feature = mesh.unroll()
-            edges.append(edge)
-            edge_features.append(edge_feature)
+            img = mesh.get_feature()
+            vertex, mask, order, edge = mesh.unroll()
             v_f = torch.zeros(mask.shape[0],img.shape[1]).to(img.device)
             v_f[mask] = img
             #reconstruct the image in reverse order
@@ -24,5 +20,7 @@ class MeshUnpool(nn.Module):
                 t = order[1,len(order[0])-idx-1]
                 f = order[0,len(order[0])-idx-1]
                 v_f[t] = v_f[f]
-            mesh.image = v_f
-        return edges, edge_features
+            mesh.update_feature(v_f)
+            mesh.edge = edge
+            mesh.vertex = vertex
+        return meshes

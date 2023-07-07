@@ -57,6 +57,7 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
 
         mesh_down = ncf[2:]
         mesh_up = mesh_down[::-1] 
+
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
     else:
         raise NotImplementedError('Encoder model name [%s] is not recognized' % arch)
@@ -145,7 +146,7 @@ class HybridUnet(nn.Module):
         #=================================================================
         #the mesh unet [params]
         #=================================================================
-        self.down_convs = down_convs
+        self.down_convs = [rec_down_convs[-1]] + down_convs 
         self.up_convs = up_convs
 
         #===========================================================
@@ -184,15 +185,12 @@ class HybridUnet(nn.Module):
         meshes = np.array(meshes)
  
         pool_res = []
-        for i in range(len(self.down_convs)-1):
+        for i in range(len(self.down_convs)-2):
             image_size = image_size//2
             pool_res.append(image_size)
 
-        encoder = MeshEncoder(self.rec_down_channel[-1], self.down_convs, pool_res)
+        encoder = MeshEncoder(self.down_convs, pool_res)
         mesh_before_pool = encoder(meshes)
-        print(meshes[0].get_feature().shape)
-        ##### issues with decoder
-        exit()
         decoder = MeshDecoder(self.up_convs)
         decoder(meshes, mesh_before_pool[:-1])
 
@@ -202,27 +200,25 @@ class HybridUnet(nn.Module):
         out = torch.transpose(torch.stack(out),2,1)
         fe = out.reshape(out.shape[0],out.shape[1],fe.shape[2],fe.shape[3])
 
-
         # ##################################################################
         # # Regular Unet UpSampling
-        # skips = skips[::-1]
-        # for i in range(len(self.rec_up_conv)):
-        #     fe = self.rec_up_conv[i](fe)
-        #     fe = torch.cat((fe, skips[i]),1)
-        #     fe = self.conv[i](fe)
-        # fe = self.output(fe).squeeze(1)
-        exit()
+        skips = skips[::-1]
+        for i in range(len(self.rec_up_conv)):
+            fe = self.rec_up_conv[i](fe)
+            fe = torch.cat((fe, skips[i]),1)
+            fe = self.conv[i](fe)
+        fe = self.output(fe).squeeze(1)
         return fe
 
     def __call__self(self,x):
         return self.forward(x)
 
 class MeshEncoder(nn.Module):
-    def __init__(self, input_channel, convs, pool_res):
+    def __init__(self, convs, pool_res):
         super(MeshEncoder, self).__init__()
-        in_channel = input_channel
+        in_channel = convs[0]
         self.down = nn.ModuleList()
-        for idx, out_channel in enumerate(convs):
+        for idx, out_channel in enumerate(convs[1:]):
             if idx > len(pool_res)-1:
                 down = DownConv(in_channel,convs[-1],None)
             else:
@@ -234,6 +230,7 @@ class MeshEncoder(nn.Module):
         before_pool = []
         for down in self.down:
             before_pool.append(down(meshes))
+        return before_pool
 
     def __call__(self, meshes):
         return self.forward(meshes)
@@ -304,21 +301,23 @@ class UpConv(nn.Module):
         return self.forward(meshes,skips)
 
     def forward(self, meshes,skips):
-        edges, edge_attributes = self.unpool(meshes)
+        meshes = self.unpool(meshes)
         for idx,mesh in enumerate(meshes): 
-            v_f = mesh.image
-            edge = edges[idx]
-            edge = edge.cuda()
-            edge_attribute = edge_attributes[idx]
-            edge_attribute = edge_attribute.cuda()
-            v_f = self.conv1(v_f,edge,edge_attribute)
+            v_f = mesh.get_feature()
+            edge = mesh.get_undirected_edges()
+            edge_attribute = mesh.get_attributes(edge).cuda()
+            v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
             v_f = F.relu(v_f)
             v_f = torch.cat((v_f,skips[idx]),1)
-            v_f = self.conv1(v_f,edge,edge_attribute)
+            mesh.update_feature(v_f)
+            edge_attribute = mesh.get_attributes(edge).cuda()
+            v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
             v_f = F.relu(v_f)
-            v_f = self.conv2(v_f,edge,edge_attribute)
+            mesh.update_feature(v_f)
+            edge_attribute = mesh.get_attributes(edge).cuda()
+            v_f = self.conv2(v_f,edge.cuda(),edge_attribute)
             v_f = F.relu(v_f)
-            mesh.image = v_f
+            mesh.update_feature(v_f)
 
 
 def reset_params(model): # todo replace with my init
