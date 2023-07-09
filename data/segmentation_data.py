@@ -75,6 +75,7 @@ def read_img(file,category):
     if(category == "label"):
         label = label.convert('L')
     label = np.array(label)
+    
     #if it is label, convert all values to 0 or 1s
     if(category == "label"):
         label = label/255

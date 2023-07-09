@@ -189,10 +189,19 @@ class HybridUnet(nn.Module):
             image_size = image_size//2
             pool_res.append(image_size)
 
+        start_time = time.time()
         encoder = MeshEncoder(self.down_convs, pool_res)
         mesh_before_pool = encoder(meshes)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print("Encoder Elapsed time:", elapsed_time, "seconds")
+
+        start_time = time.time()
         decoder = MeshDecoder(self.up_convs)
         decoder(meshes, mesh_before_pool[:-1])
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print("Decoder Elapsed time:", elapsed_time, "seconds")
 
         out = []
         for mesh in meshes:

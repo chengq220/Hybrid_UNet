@@ -36,18 +36,15 @@ if __name__ == '__main__':
             model.set_input(data)
             model.optimize_parameters()
 
-            if total_steps % opt.print_freq == 0:
+            if total_steps % opt.print_freq == 0: #change it so that it track the loss for the whole epoch not individal iterations
                 loss = model.loss
                 t = (time.time() - iter_start_time) / opt.batch_size
                 writer.print_current_losses(epoch, epoch_iter, loss, t, t_data)
-                writer.plot_loss(loss, epoch, epoch_iter, dataset_size)
-            # if(loss < best_loss):
-            #         print('saving the latest model as best')
-            #         model.save_network('best')
+                if(loss < best_loss):
+                    model.save_network('best')
+                best_loss = loss
 
             if i % opt.save_latest_freq == 0:
-                print('saving the latest model (epoch %d, total_steps %d)' %
-                      (epoch, total_steps))
                 model.save_network('latest')
             
             if total_steps % 2000 == 0:

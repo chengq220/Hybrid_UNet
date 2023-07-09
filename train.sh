@@ -2,11 +2,12 @@
 
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
---name Medical_Imaging_multgpus \
+--name Medical_imaging_try \
 --arch hybrid \
+--loss_func dice \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
---gpu_ids 1,2 \
+--gpu_ids 4 \
 --batch_size 4 \
 --lr 0.00001 \
 --num_aug 20 \
