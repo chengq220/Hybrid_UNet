@@ -2,7 +2,7 @@
 
 python predict.py \
 --dataroot datasets/CVC-ClinicDB \
---name Medical_imaging_spline \
+--name Medical_imaging_higherLR \
 --arch hybrid \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \

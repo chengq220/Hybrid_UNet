@@ -165,6 +165,7 @@ class HybridUnet(nn.Module):
         self.output = nn.Conv2d(rec_up_convs[-1],output,kernel_size=1,padding="same")
 
     def forward(self,x):
+        start_time = time.time()
         #################################################
         # Regular UNET downsampling
         fe = x
@@ -183,25 +184,11 @@ class HybridUnet(nn.Module):
             mesh = Mesh(file=image)
             meshes.append(mesh)
         meshes = np.array(meshes)
- 
-        pool_res = []
-        for i in range(len(self.down_convs)-2):
-            image_size = image_size//2
-            pool_res.append(image_size)
-
-        start_time = time.time()
-        encoder = MeshEncoder(self.down_convs, pool_res)
+        
+        encoder = MeshEncoder(self.down_convs)
         mesh_before_pool = encoder(meshes)
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print("Encoder Elapsed time:", elapsed_time, "seconds")
-
-        start_time = time.time()
         decoder = MeshDecoder(self.up_convs)
         decoder(meshes, mesh_before_pool[:-1])
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print("Decoder Elapsed time:", elapsed_time, "seconds")
 
         out = []
         for mesh in meshes:
@@ -217,21 +204,24 @@ class HybridUnet(nn.Module):
             fe = torch.cat((fe, skips[i]),1)
             fe = self.conv[i](fe)
         fe = self.output(fe).squeeze(1)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print("Network Elapsed time:", elapsed_time, " seconds")
         return fe
 
     def __call__self(self,x):
         return self.forward(x)
 
 class MeshEncoder(nn.Module):
-    def __init__(self, convs, pool_res):
+    def __init__(self, convs):
         super(MeshEncoder, self).__init__()
         in_channel = convs[0]
         self.down = nn.ModuleList()
         for idx, out_channel in enumerate(convs[1:]):
-            if idx > len(pool_res)-1:
-                down = DownConv(in_channel,convs[-1],None)
+            if idx > len(convs[1:])-2:
+                down = DownConv(in_channel,convs[-1],False)
             else:
-                down = DownConv(in_channel,out_channel,pool_res[idx])
+                down = DownConv(in_channel,out_channel,True)
             self.down.append(down)
             in_channel = out_channel
 
@@ -250,8 +240,8 @@ class DownConv(nn.Module):
         self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.pool = None
-        if(pool is not None):
-            self.pool = MeshPool(pool)
+        if(pool):
+            self.pool = MeshPool()
 
     def __call__(self, meshes):
         return self.forward(meshes)

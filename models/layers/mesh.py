@@ -13,6 +13,7 @@ class Mesh:
         #return the directed edges in the coo format
         self.edges, self.edge_counts = self.__get_edges(self.faces)
         self.adj_matrix = self.__adjacency(self.edges)
+        self.neighbor = self.compute_neighbor()
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
         self.collapse_order = []
         self.history_data = {
@@ -107,32 +108,33 @@ class Mesh:
 
     #calculate the attributes in 2d space of each edges
     def get_attributes(self,u_e):
-        try:
-            feature = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
-            return feature
-        except:
-            print("get attribute error occured")
-            exit()
+        feature = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
+        return feature
+
     #collapse the two vertices together and update the matrix 
     def merge_vertex(self,edge_id):
+        # start_time = time.time()
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
         max_tensor = torch.max(self.__image[v_0], self.__image[v_1])
         self.__image[v_0].data = max_tensor
-
+        
         neighbors = torch.nonzero(self.adj_matrix[v_1]).squeeze(1)
-        for neighbor in neighbors:
-            if(neighbor != v_0): #update the neighbors and its adjacent vertices
-                self.adj_matrix[neighbor,v_1] = False
-                self.adj_matrix[neighbor,v_0] = True
-                self.adj_matrix[:,v_1] = False #update the adjacency matrix
-                self.adj_matrix[v_1,:] = False
+        neighbors = neighbors[neighbors != v_0]
+        # Update the adjacency matrix
+        self.adj_matrix[neighbors, v_1] = False
+        self.adj_matrix[neighbors, v_0] = True
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
         self.collapse_order.append(edge_id)
 
+    def compute_neighbor(self):
+        adj = self.adj_matrix + torch.transpose(self.adj_matrix,1,0)
+        return adj @ adj.t()
+
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
         self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
+        self.neighbor = self.compute_neighbor()
         self.__image = self.__image[self.vertex_mask]
         self.update_history()
         self.vs = self.vs[self.vertex_mask]

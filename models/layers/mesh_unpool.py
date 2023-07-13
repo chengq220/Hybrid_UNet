@@ -16,9 +16,10 @@ class MeshUnpool(nn.Module):
             v_f = torch.zeros(mask.shape[0],img.shape[1]).to(img.device)
             v_f[mask] = img
             #reconstruct the image in reverse order
-            t = order[1, ::-1]
-            f = order[0, ::-1]
-            v_f[t] = v_f[f]
+            for idx in range(len(order[0])):
+                t = order[1, len(order[0]) - idx - 1]
+                f = order[0, len(order[0]) - idx - 1]
+                v_f[t] = v_f[f]
             mesh.update_feature(v_f)
             mesh.edge = edge
             mesh.vertex = vertex

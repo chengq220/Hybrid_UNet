@@ -6,9 +6,8 @@ from heapq import heappop, heapify
 
 
 class MeshPool(nn.Module):
-    def __init__(self, target, multi_thread=False):
+    def __init__(self, multi_thread=False):
         super(MeshPool, self).__init__()
-        self.__out_target = target
         self.__multi_thread = multi_thread
         self.__meshes = None
 
@@ -17,6 +16,7 @@ class MeshPool(nn.Module):
 
     def forward(self, meshes):
         pool_threads = []
+        self.__out_target = meshes[0].vertex_count//2
         self.out = []
         self.__meshes = meshes
         # iterate over batch
@@ -54,16 +54,8 @@ class MeshPool(nn.Module):
 
     @staticmethod
     def is_valid(mesh, edge_id):
-        # edges in coo
         v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
-        n_0 = set(mesh.edges[1, mesh.edges[0, :] == v_0].tolist())
-        n_f_0 = set(mesh.edges[0, mesh.edges[1, :] == v_0].tolist())  # find all the undirected neighbors
-        neighbor_v0 = n_0.union(n_f_0)
-        n_1 = set(mesh.edges[1, mesh.edges[0, :] == v_1].tolist())
-        n_f_1 = set(mesh.edges[0, mesh.edges[1, :] == v_1].tolist())
-        neighbor_v1 = n_1.union(n_f_1)
-        shared = neighbor_v0 & neighbor_v1 - set([v_0, v_1])
-        return len(shared) == 2
+        return (mesh.neighbor[v_0,v_1].int().item()==2)
 
     def __build_queue(self, features, edges_count):
         # delete edges with smallest norm
