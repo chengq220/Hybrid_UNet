@@ -52,12 +52,12 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
         net = Unet(down,bottleneck,up,classes)
     elif arch == 'hybrid':
         ncf = opt.ncf
-        rec_down = ncf[:2]
+        rec_down = ncf[:3]
         rec_up = rec_down[::-1]
 
-        mesh_down = ncf[2:]
-        mesh_up = mesh_down[::-1] 
-
+        mesh_down = ncf[3:]
+        mesh_up = mesh_down[::-1]
+        
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
     else:
         raise NotImplementedError('Encoder model name [%s] is not recognized' % arch)
@@ -161,11 +161,11 @@ class HybridUnet(nn.Module):
             self.conv.append(rectangular_conv_block(in_channel,out_channel,3))
             in_channel = out_channel
 
-        ##output
+        # self.bn = rectangular_conv_block(128,256,3)
         self.output = nn.Conv2d(rec_up_convs[-1],output,kernel_size=1,padding="same")
 
     def forward(self,x):
-        start_time = time.time()
+        # start_time = time.time()
         #################################################
         # Regular UNET downsampling
         fe = x
@@ -196,17 +196,19 @@ class HybridUnet(nn.Module):
         out = torch.transpose(torch.stack(out),2,1)
         fe = out.reshape(out.shape[0],out.shape[1],fe.shape[2],fe.shape[3])
 
-        # ##################################################################
-        # # Regular Unet UpSampling
+        ##################################################################
+        # Regular Unet UpSampling
         skips = skips[::-1]
         for i in range(len(self.rec_up_conv)):
             fe = self.rec_up_conv[i](fe)
             fe = torch.cat((fe, skips[i]),1)
             fe = self.conv[i](fe)
         fe = self.output(fe).squeeze(1)
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print("Network Elapsed time:", elapsed_time, " seconds")
+        # print(fe.shape)
+        # end_time = time.time()
+        # elapsed_time = end_time - start_time
+        # print("Hybrid UNET Elapsed time: ", elapsed_time, " seconds")
+        # exit()
         return fe
 
     def __call__self(self,x):

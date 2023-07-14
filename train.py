@@ -11,54 +11,30 @@ import wandb
 
 if __name__ == '__main__':
     opt = TrainOptions().parse()
+    model = create_model(opt)
     dataset = DataLoader(opt)
     dataset_size = len(dataset)
-    model = create_model(opt)
     writer = Writer(opt)
     total_steps = 0
     best_loss = 1 
 
-    # run = wandb.init(
-    #     project="project"
-    # )
+    wandb.init(project="debug")
+    wandb.watch(model.net, log='all')
 
+    data = next(iter(dataset))
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
-        epoch_start_time = time.time()
-        iter_data_time = time.time()
-        epoch_iter = 0
-
-        for i, data in enumerate(dataset):
-            iter_start_time = time.time()
-            if total_steps % opt.print_freq == 0:
-                t_data = iter_start_time - iter_data_time
-            total_steps += opt.batch_size
-            epoch_iter += opt.batch_size
+        total_steps += 1
+        loss = 0
+        for i in range(10):
             model.set_input(data)
             model.optimize_parameters()
-
-            if total_steps % opt.print_freq == 0: #change it so that it track the loss for the whole epoch not individal iterations
-                loss = model.loss
-                t = (time.time() - iter_start_time) / opt.batch_size
-                writer.print_current_losses(epoch, epoch_iter, loss, t, t_data)
-                if(loss < best_loss):
-                    model.save_network('best')
-                best_loss = loss
-
-            if i % opt.save_latest_freq == 0:
-                model.save_network('latest')
-            
-            if total_steps % 2000 == 0:
-                predict(total_steps)
-
-            iter_data_time = time.time()
-
-        print('End of epoch %d / %d \t Time Taken: %d sec' %
-              (epoch, opt.niter + opt.niter_decay, time.time() - epoch_start_time))
+            model.save_network('latest')
+            loss += model.loss
+        loss /= 10   
+        # print("epoch {}'s loss: {}".format(epoch,loss))
+        if(loss < best_loss):
+            model.save_network('best')
+        best_loss = loss
+        acc = predict(total_steps)
         model.update_learning_rate()
-
-        if epoch % opt.run_test_freq == 0:
-            acc = run_test(epoch)
-            writer.plot_acc(acc, epoch)
-        # wandb.log({"accuracy": acc ,"loss": loss})
-
-    writer.close()
+        wandb.log({"accuracy":acc, "loss": loss})

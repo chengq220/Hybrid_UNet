@@ -54,7 +54,7 @@ def predict(steps=3):
         mask = mask_transform(image=mask)["image"].squeeze()
         
         dice = dice_coefficient(predMask,torch.from_numpy(mask))
-        print("Dice Score: {:.2f}".format(dice.item()))
+        # print("Dice Score: {:.2f}".format(dice.item()))
 
         predMask = torch.sigmoid(predMask)
         predMask = predMask.cpu().numpy()
@@ -85,6 +85,7 @@ def predict(steps=3):
         os.makedirs(directory,exist_ok=True)
         f.savefig(directory + "/" + save_loc)
         plt.close()
+        return dice
 
 if __name__ == '__main__':
     predict()

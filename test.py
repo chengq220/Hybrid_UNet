@@ -5,7 +5,7 @@ from utils.writer import Writer
 
 
 def run_test(epoch=-1):
-    print('Running Test')
+    # print('Running Test')
     opt = TestOptions().parse()
     opt.serial_batches = True  # no shuffle
     dataset = DataLoader(opt)
@@ -17,7 +17,7 @@ def run_test(epoch=-1):
         model.set_input(data)
         ncorrect, nexamples = model.test()
         writer.update_counter(ncorrect, nexamples)
-    writer.print_acc(epoch, writer.acc)
+    # writer.print_acc(epoch, writer.acc)
     return writer.acc
 
 

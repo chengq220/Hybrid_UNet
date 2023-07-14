@@ -3,6 +3,7 @@ import torch.nn as nn
 from threading import Thread
 import numpy as np
 from heapq import heappop, heapify
+import heapq
 
 
 class MeshPool(nn.Module):
@@ -42,20 +43,28 @@ class MeshPool(nn.Module):
             edge_id = int(edge_id)
             # make sure that the vertex have not been merged already
             if mesh.vertex_mask[mesh.edges[1,edge_id]] and mesh.vertex_mask[mesh.edges[0,edge_id]]:
-                self.__pool_edge(mesh, edge_id)
+                items = self.__pool_edge(mesh, edge_id)
+                if items is not None:
+                    queue = self.update_q(queue,items)
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
         if self.is_valid(mesh,edge_id):
-            mesh.merge_vertex(edge_id)
-            return True
+            return mesh.merge_vertex(edge_id)
         else:
-            return False
+            return None
 
     @staticmethod
     def is_valid(mesh, edge_id):
         v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
         return (mesh.neighbor[v_0,v_1].int().item()==2)
+
+    @staticmethod
+    def update_q(q, items):
+        queue = q
+        queue.extend(items)
+        heapq.heapify(queue)
+        return queue
 
     def __build_queue(self, features, edges_count):
         # delete edges with smallest norm

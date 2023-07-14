@@ -120,12 +120,24 @@ class Mesh:
         
         neighbors = torch.nonzero(self.adj_matrix[v_1]).squeeze(1)
         neighbors = neighbors[neighbors != v_0]
+
+        new_edges = v_0.repeat(neighbors.size(0))
+        new_edges = torch.stack((new_edges, neighbors))
+        features = torch.cat((self.__image[new_edges[0]],self.__image[new_edges[1]]),dim=1)
+        squared_magnitude = torch.sum(features * features, 1)
+        start = self.edge_counts
+        self.edges = torch.cat((self.edges,new_edges),dim=1)
+        self.edge_counts += new_edges[0].size(0)
+        edge_ids = torch.arange(start, self.edge_counts,device=squared_magnitude.device, dtype=torch.float32)
+        heap_items = torch.stack((squared_magnitude, edge_ids),dim=1).tolist()
+
         # Update the adjacency matrix
         self.adj_matrix[neighbors, v_1] = False
         self.adj_matrix[neighbors, v_0] = True
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
         self.collapse_order.append(edge_id)
+        return heap_items
 
     def compute_neighbor(self):
         adj = self.adj_matrix + torch.transpose(self.adj_matrix,1,0)
