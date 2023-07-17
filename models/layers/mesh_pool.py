@@ -41,7 +41,6 @@ class MeshPool(nn.Module):
         while mesh.vertex_count > self.__out_target:
             value, edge_id = heappop(queue)
             edge_id = int(edge_id)
-            # make sure that the vertex have not been merged already
             if mesh.vertex_mask[mesh.edges[1,edge_id]] and mesh.vertex_mask[mesh.edges[0,edge_id]]:
                 items = self.__pool_edge(mesh, edge_id)
                 if items is not None:

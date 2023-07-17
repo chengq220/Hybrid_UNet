@@ -36,5 +36,5 @@ if __name__ == '__main__':
             model.save_network('best')
         best_loss = loss
         acc = predict(total_steps)
-        model.update_learning_rate()
+        # model.update_learning_rate()
         wandb.log({"accuracy":acc, "loss": loss})
