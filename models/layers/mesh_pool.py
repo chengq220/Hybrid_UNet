@@ -58,7 +58,7 @@ class MeshPool(nn.Module):
         v_0_n = mesh.adj_matrix[:, v_0] + mesh.adj_matrix[v_0]
         v_1_n = mesh.adj_matrix[:, v_1] + mesh.adj_matrix[v_1]
         shared = v_0_n & v_1_n
-        return (shared.sum() == 2)
+        return (shared.sum() == 2).item()
 
     def __build_queue(self, features, edges_count):
         # delete edges with smallest norm
