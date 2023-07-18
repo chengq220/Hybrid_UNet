@@ -128,7 +128,7 @@ class Mesh:
 
         new_edges = v_0.repeat(valid_neighbors.size(0))
         new_edges = torch.stack((new_edges, valid_neighbors))
-        features = torch.cat((self.image[new_edges[0]],self.image[new_edges[1]]),dim=1)
+        features = torch.cat((self.__image[new_edges[0]],self.__image[new_edges[1]]),dim=1)
         squared_magnitude = torch.sum(features * features, 1)
         edge_ids = torch.arange(self.edge_counts, self.edge_counts+len(features), device=squared_magnitude.device, dtype=torch.float32)
         self.edges = torch.cat((self.edges,new_edges),dim=1)
@@ -148,7 +148,7 @@ class Mesh:
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
         self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
-        self.neighbor = self.compute_neighbor()
+        # self.neighbor = self.compute_neighbor()
         self.__image = self.__image[self.vertex_mask]
         self.update_history()
         self.vs = self.vs[self.vertex_mask]
