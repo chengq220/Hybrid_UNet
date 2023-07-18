@@ -96,7 +96,7 @@ class ClassifierModel:
             out = self.forward()
             dice = Dice(average='micro').to(self.device)
             dice_val = dice(out, self.labels)
-        return dice_val, 1
+        return dice_val
 
     def predict(self,pred):
         """

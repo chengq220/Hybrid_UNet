@@ -52,12 +52,12 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
         net = Unet(down,bottleneck,up,classes)
     elif arch == 'hybrid':
         ncf = opt.ncf
-        #rec_down = ncf[:3]
-        rec_down =ncf[:2]
+        rec_down = ncf[:3]
+        # rec_down =ncf[:2]
         rec_up = rec_down[::-1]
 
-        #mesh_down = ncf[3:]
-        mesh_down = ncf[2:]
+        mesh_down = ncf[3:]
+        # mesh_down = ncf[2:]
         mesh_up = mesh_down[::-1]
         
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
@@ -96,6 +96,7 @@ class Unet(nn.Module):
 
         ##bottleneck
         self.bottleneck = rectangular_conv_block(self.down_convs[-1],bottleneck,3)
+        self.splinebn = DownConv(self.down_convs[-1],bottleneck,False)
 
         ## Decoder
         in_channel = bottleneck
@@ -115,7 +116,21 @@ class Unet(nn.Module):
             fe = down_conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
-        fe = self.bottleneck(fe)
+        # fe = self.bottleneck(fe)
+        
+        #testing purposes =======================
+        meshes = []
+        #create mesh for the batch
+        for image in fe:
+            mesh = Mesh(file=image)
+            meshes.append(mesh)
+        meshes = np.array(meshes)
+        self.splinebn(meshes)
+        fe = []
+        for mesh in meshes:
+            fe.append(mesh.get_feature())
+        fe = torch.transpose(torch.stack(fe),2,1).reshape(1,1024,16,16)
+        #testing purposes=========================
 
         skips = skips[::-1]
         for i in range(len(skips)):
@@ -124,6 +139,7 @@ class Unet(nn.Module):
             fe = self.up_conv[i](fe)
         
         fe = self.output(fe).squeeze(1)
+
         return fe
 
     def __call__self(self,x):
@@ -163,7 +179,7 @@ class HybridUnet(nn.Module):
             self.conv.append(rectangular_conv_block(in_channel,out_channel,3))
             in_channel = out_channel
 
-        self.bn = rectangular_conv_block(128,256,3)
+        # self.bn = rectangular_conv_block(128,256,3)
         self.output = nn.Conv2d(rec_up_convs[-1],output,kernel_size=1,padding="same")
 
     def forward(self,x):
@@ -176,28 +192,28 @@ class HybridUnet(nn.Module):
             fe = conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
-        fe = self.bn(fe)
+        # fe = self.bn(fe)
 
-        # image_size = fe.shape[2]*fe.shape[3]
-        # ##################################################
-        # #Mesh Unet with spline conv
-        # meshes = []
-        # #create mesh for the batch
-        # for image in fe:
-        #     mesh = Mesh(file=image)
-        #     meshes.append(mesh)
-        # meshes = np.array(meshes)
+        image_size = fe.shape[2]*fe.shape[3]
+        ##################################################
+        #Mesh Unet with spline conv
+        meshes = []
+        #create mesh for the batch
+        for image in fe:
+            mesh = Mesh(file=image)
+            meshes.append(mesh)
+        meshes = np.array(meshes)
         
-        # encoder = MeshEncoder(self.down_convs)
-        # mesh_before_pool = encoder(meshes)
-        # decoder = MeshDecoder(self.up_convs)
-        # decoder(meshes, mesh_before_pool[:-1])
+        encoder = MeshEncoder(self.down_convs)
+        mesh_before_pool = encoder(meshes)
+        decoder = MeshDecoder(self.up_convs)
+        decoder(meshes, mesh_before_pool[:-1])
 
-        # out = []
-        # for mesh in meshes:
-        #     out.append(mesh.get_feature())
-        # out = torch.transpose(torch.stack(out),2,1)
-        # fe = out.reshape(out.shape[0],out.shape[1],fe.shape[2],fe.shape[3])
+        out = []
+        for mesh in meshes:
+            out.append(mesh.get_feature())
+        out = torch.transpose(torch.stack(out),2,1)
+        fe = out.reshape(out.shape[0],out.shape[1],fe.shape[2],fe.shape[3])
 
         ##################################################################
         # Regular Unet UpSampling

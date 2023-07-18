@@ -8,7 +8,7 @@ from options.predict_options import PredictOptions
 from utils.util import dice_coefficient
 import os 
 
-def predict(steps=2):
+def predict(steps=5):
     print("Running Prediction")
     opt = PredictOptions().parse()
     resize = opt.resize

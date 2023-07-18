@@ -10,15 +10,15 @@ def run_test(epoch=-1):
     opt.serial_batches = True  # no shuffle
     dataset = DataLoader(opt)
     model = create_model(opt)
-    writer = Writer(opt)
-    # test
-    writer.reset_counter()
+    # writer = Writer(opt)
+    # # test
+    # writer.reset_counter()
+    accuracy = 0
+    length = len(dataset)
     for i, data in enumerate(dataset):
         model.set_input(data)
-        ncorrect, nexamples = model.test()
-        writer.update_counter(ncorrect, nexamples)
-    # writer.print_acc(epoch, writer.acc)
-    return writer.acc
+        accuracy += model.test()
+    return (accuracy/length)
 
 
 if __name__ == '__main__':
