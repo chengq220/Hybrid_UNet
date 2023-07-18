@@ -56,7 +56,10 @@ class MeshPool(nn.Module):
     @staticmethod
     def is_valid(mesh, edge_id):
         v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
-        return (mesh.neighbor[v_0,v_1].int().item()==2)
+        v_0_n = mesh.adj_matrix[:, v_0] + mesh.adj_matrix[v_0]
+        v_1_n = mesh.adj_matrix[:, v_1] + mesh.adj_matrix[v_1]
+        shared = v_0_n & v_1_n
+        return (shared.sum() == 2).item()
 
     @staticmethod
     def update_q(q, items):

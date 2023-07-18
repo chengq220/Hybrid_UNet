@@ -2,8 +2,8 @@
 
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
---name unet_with_splineatbottleneck \
---arch unet \
+--name debug \
+--arch hybrid \
 --loss_func dice \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \

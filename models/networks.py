@@ -96,7 +96,7 @@ class Unet(nn.Module):
 
         ##bottleneck
         self.bottleneck = rectangular_conv_block(self.down_convs[-1],bottleneck,3)
-        self.splinebn = DownConv(self.down_convs[-1],bottleneck,False)
+        # self.splinebn = DownConv(self.down_convs[-1],bottleneck,False)
 
         ## Decoder
         in_channel = bottleneck
@@ -116,21 +116,21 @@ class Unet(nn.Module):
             fe = down_conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
-        # fe = self.bottleneck(fe)
+        fe = self.bottleneck(fe)
         
-        #testing purposes =======================
-        meshes = []
-        #create mesh for the batch
-        for image in fe:
-            mesh = Mesh(file=image)
-            meshes.append(mesh)
-        meshes = np.array(meshes)
-        self.splinebn(meshes)
-        fe = []
-        for mesh in meshes:
-            fe.append(mesh.get_feature())
-        fe = torch.transpose(torch.stack(fe),2,1).reshape(1,1024,16,16)
-        #testing purposes=========================
+        # #testing purposes =======================
+        # meshes = []
+        # #create mesh for the batch
+        # for image in fe:
+        #     mesh = Mesh(file=image)
+        #     meshes.append(mesh)
+        # meshes = np.array(meshes)
+        # self.splinebn(meshes)
+        # fe = []
+        # for mesh in meshes:
+        #     fe.append(mesh.get_feature())
+        # fe = torch.transpose(torch.stack(fe),2,1).reshape(1,1024,16,16)
+        # #testing purposes=========================
 
         skips = skips[::-1]
         for i in range(len(skips)):

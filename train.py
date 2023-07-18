@@ -18,8 +18,8 @@ if __name__ == '__main__':
     total_steps = 0
     best_loss = 1 
 
-    wandb.init(project="small_dataset")
-    wandb.watch(model.net, log='all')
+    # wandb.init(project="small_dataset")
+    # wandb.watch(model.net, log='all')
 
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
         total_steps += 1
@@ -29,6 +29,8 @@ if __name__ == '__main__':
             model.optimize_parameters()
             model.save_network('latest')
             train_loss += model.loss
+            exit()
+        exit()
         train_loss /= dataset_size   
         # print("epoch {}'s loss: {}".format(epoch,loss))
         if(train_loss < best_loss):
@@ -38,4 +40,4 @@ if __name__ == '__main__':
         val_acc = predict(total_steps)
 
         # model.update_learning_rate()
-        wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
+        # wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
