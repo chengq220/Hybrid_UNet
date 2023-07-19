@@ -82,7 +82,7 @@ def define_loss(opt):
 class Unet(nn.Module):
     """UNET implementation 
     """
-    def __init__(self, down_convs, bottleneck, up_convs,output):
+    def __init__(self, down_convs, bottleneck, up_convs, output):
         super(Unet,self).__init__()
         self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
         self.down_convs = down_convs[:len(down_convs)-1]
@@ -93,10 +93,9 @@ class Unet(nn.Module):
         for out_channels in self.down_convs:
             self.down.append(rectangular_conv_block(in_channels, out_channels,3))
             in_channels = out_channels
-
         ##bottleneck
         self.bottleneck = rectangular_conv_block(self.down_convs[-1],bottleneck,3)
-        # self.splinebn = DownConv(self.down_convs[-1],bottleneck,False)
+        self.splinebn = DownConv(self.down_convs[-1],bottleneck,False)
 
         ## Decoder
         in_channel = bottleneck
@@ -112,12 +111,40 @@ class Unet(nn.Module):
     def forward(self,x):
         fe = x
         skips = []
-        for down_conv in self.down:
+        for down_conv in self.down[:-1]:
             fe = down_conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
-        fe = self.bottleneck(fe)
+        # fe = self.bottleneck(fe)
         
+        #===testing=====
+        fe = self.down[-1](fe)
+        skips.append(fe)
+        meshes = []
+        #create mesh for the batch
+        for image in fe:
+            mesh = Mesh(file=image)
+            meshes.append(mesh)
+        meshes = np.array(meshes)
+        pool = MeshPool()
+        unpool = MeshUnpool()
+        meshes = pool(meshes)
+        for idx,mesh in enumerate(meshes):     
+            edges = mesh.get_undirected_edges()
+            mesh.update_dictionary(edges,"edge")
+        self.splinebn(meshes)
+        meshes = unpool(meshes)
+        spline1 = SplineConv(1024,512,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
+        for idx,mesh in enumerate(meshes): 
+            v_f = mesh.get_feature()
+            edge = mesh.get_undirected_edges()
+            edge_attribute = mesh.get_attributes(edge).cuda()
+            v_f = spline1(v_f,edge.cuda(),edge_attribute)
+            mesh.update_feature(v_f)
+        fe = []
+        for mesh in meshes:
+            fe.append(mesh.get_feature())
+        fe = torch.transpose(torch.stack(fe),2,1).reshape(1,512,32,32)
         # #testing purposes =======================
         # meshes = []
         # #create mesh for the batch
@@ -131,15 +158,14 @@ class Unet(nn.Module):
         #     fe.append(mesh.get_feature())
         # fe = torch.transpose(torch.stack(fe),2,1).reshape(1,1024,16,16)
         # #testing purposes=========================
-
         skips = skips[::-1]
-        for i in range(len(skips)):
+        fe = torch.cat((fe,skips[0]),1)
+        fe = self.up_conv[0](fe)
+        for i in range(1,len(skips)):
             fe = self.up[i](fe)
             fe = torch.cat((fe,skips[i]),1)
             fe = self.up_conv[i](fe)
-        
         fe = self.output(fe).squeeze(1)
-
         return fe
 
     def __call__self(self,x):

@@ -48,7 +48,9 @@ class MeshPool(nn.Module):
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
-        if self.is_valid(mesh,edge_id):
+        if self.is_boundary(mesh,edge_id):
+            return None
+        elif self.is_valid(mesh,edge_id):
             return mesh.merge_vertex(edge_id)
         else:
             return None
@@ -60,6 +62,13 @@ class MeshPool(nn.Module):
         v_1_n = mesh.adj_matrix[:, v_1] + mesh.adj_matrix[v_1]
         shared = v_0_n & v_1_n
         return (shared.sum() == 2).item()
+
+    @staticmethod
+    def is_boundary(mesh, edge_id):
+        v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
+        v_0_n = torch.nonzero(mesh.adj_matrix[v_0] + mesh.adj_matrix[:,v_0]).size(0)
+        v_1_n = torch.nonzero(mesh.adj_matrix[v_1] + mesh.adj_matrix[:,v_1]).size(0)
+        return not (v_0_n > 4 and v_1_n > 4)
 
     @staticmethod
     def update_q(q, items):

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from torch_geometric.nn import SplineConv
 
 class MeshUnpool(nn.Module):
     def __init__(self):
