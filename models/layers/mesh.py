@@ -1,13 +1,15 @@
 import torch
 import numpy as np
-from models.layers.mesh_pool import MeshPool
-# from mesh_unpool import MeshUnpool
-# import time
+# from models.layers.mesh_pool import MeshPool
+from utils.util import pad
 
 
 class Mesh:
     def __init__(self, file=None):
+        self.before_pad_vertices = file.shape[1] * file.shape[2]
+        file = pad(file)
         self.__image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
+        self.epsilon = self.calcEpsilon(file.shape[1],file.shape[2])
         self.vertex_count = None
         self.vs, self.faces = self.__fill_mesh(file.shape[1],file.shape[2])
         #return the directed edges in the coo format
@@ -115,7 +117,7 @@ class Mesh:
     def merge_vertex(self,edge_id):
         # start_time = time.time()
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
-        max_tensor = torch.max(self.__image[v_0], self.__image[v_1])
+        max_tensor = torch.dot(self.__image[v_0], self.__image[v_1])
         self.__image[v_0].data = max_tensor
         
         neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
@@ -145,10 +147,6 @@ class Mesh:
         self.collapse_order.append(edge_id)
         # return heap_items
         return None
-
-    # def compute_neighbor(self):
-    #     adj = self.adj_matrix + torch.transpose(self.adj_matrix,1,0)
-    #     return adj @ adj.t()
 
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
@@ -202,3 +200,7 @@ class Mesh:
         pool_order = self.history_data['collapse_order'].pop()
         edges = self.history_data['edge'].pop()
         return vertex, vertex_mask, pool_order, edges
+
+    @staticmethod
+    def calcEpsilon(length,width):
+        return float(1)/(length*width)

@@ -11,6 +11,7 @@ import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
 from torch_geometric.nn import SplineConv
+from utils.util import unpad
 import wandb
 import time
 
@@ -143,8 +144,10 @@ class Unet(nn.Module):
             mesh.update_feature(v_f)
         fe = []
         for mesh in meshes:
+
             fe.append(mesh.get_feature())
-        fe = torch.transpose(torch.stack(fe),2,1).reshape(1,512,32,32)
+        fe = torch.transpose(torch.stack(fe),2,1).reshape(1,512,34,34)
+        fe = unpad(fe)
         # #testing purposes =======================
         # meshes = []
         # #create mesh for the batch

@@ -17,7 +17,8 @@ class MeshPool(nn.Module):
 
     def forward(self, meshes):
         pool_threads = []
-        self.__out_target = meshes[0].vertex_count//2
+        num_vertex_delete = meshes[0].before_pad_vertices - meshes[0].before_pad_vertices // 2
+        self.__out_target = meshes[0].vertex_count - num_vertex_delete
         self.out = []
         self.__meshes = meshes
         # iterate over batch
@@ -65,10 +66,13 @@ class MeshPool(nn.Module):
 
     @staticmethod
     def is_boundary(mesh, edge_id):
-        v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
-        v_0_n = torch.nonzero(mesh.adj_matrix[v_0] + mesh.adj_matrix[:,v_0]).size(0)
-        v_1_n = torch.nonzero(mesh.adj_matrix[v_1] + mesh.adj_matrix[:,v_1]).size(0)
-        return not (v_0_n > 4 and v_1_n > 4)
+        v_0, v_1 = mesh.vs[mesh.edges[0, edge_id]], mesh.vs[mesh.edges[1, edge_id]]  # get the spacial position of the vertex
+        epsilon = mesh.epsilon
+        boundary_check = ((v_0[0] < epsilon) | (v_0[0] > 1 - epsilon) |
+                          (v_0[1] < epsilon) | (v_0[1] > 1 - epsilon) |
+                          (v_1[0] < epsilon) | (v_1[0] > 1 - epsilon) |
+                          (v_1[1] < epsilon) | (v_1[1] > 1 - epsilon))
+        return boundary_check
 
     @staticmethod
     def update_q(q, items):
