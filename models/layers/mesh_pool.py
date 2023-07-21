@@ -36,7 +36,7 @@ class MeshPool(nn.Module):
 
     def __pool_main(self, mesh_index):
         mesh = self.__meshes[mesh_index]
-        image = mesh.get_feature()
+        image = mesh.image
         features = torch.transpose(torch.cat((image[mesh.edges[0, :]], image[mesh.edges[1, :]]), dim=1), 0, 1)
         queue = self.__build_queue(features, mesh.edge_counts)
         while mesh.vertex_count > self.__out_target:

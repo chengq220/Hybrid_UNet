@@ -18,7 +18,7 @@ def recConvBlock(in_channel,out_channel,kernel):
 
 class MeshDownConv(nn.Module):
     def __init__(self, in_channels, out_channels, pool):
-        super(DownConv, self).__init__()
+        super(MeshDownConv, self).__init__()
         self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.pool = None
@@ -51,7 +51,7 @@ class MeshDownConv(nn.Module):
 
 class MeshUpConv(nn.Module):
     def __init__(self, in_channels, out_channels):
-        super(UpConv, self).__init__()
+        super(MeshUpConv, self).__init__()
         self.conv1 = SplineConv(in_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.unpool = MeshUnpool()
