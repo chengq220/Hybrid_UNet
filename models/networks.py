@@ -4,8 +4,9 @@ from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
 import torch.nn.functional as F
-from models.layers.mesh_pool import MeshPool
-from models.layers.mesh_unpool import MeshUnpool
+# from models.layers.mesh_pool import MeshPool
+# from models.layers.mesh_unpool import MeshUnpool
+from models.layers.layer import recConvBlock,MeshDownConv,MeshUpConv
 from models.layers.mesh import Mesh
 import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
@@ -92,11 +93,10 @@ class Unet(nn.Module):
         in_channels = 3
         self.down = nn.ModuleList()
         for out_channels in self.down_convs:
-            self.down.append(rectangular_conv_block(in_channels, out_channels,3))
+            self.down.append(recConvBlock(in_channels, out_channels,3))
             in_channels = out_channels
         ##bottleneck
-        self.bottleneck = rectangular_conv_block(self.down_convs[-1],bottleneck,3)
-        self.splinebn = DownConv(self.down_convs[-1],bottleneck,False)
+        self.bottleneck = recConvBlock(self.down_convs[-1],bottleneck,3)
 
         ## Decoder
         in_channel = bottleneck
@@ -104,7 +104,7 @@ class Unet(nn.Module):
         self.up_conv = nn.ModuleList()
         for out_channels in up_convs:
             self.up.append(nn.ConvTranspose2d(in_channel,out_channels,kernel_size=2,stride=2))
-            self.up_conv.append(rectangular_conv_block(in_channel,out_channels,3))
+            self.up_conv.append(recConvBlock(in_channel,out_channels,3))
             in_channel = out_channels
 
         self.output = nn.Conv2d(up_convs[-1],output,kernel_size = 1, padding="same")
@@ -116,51 +116,7 @@ class Unet(nn.Module):
             fe = down_conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
-        # fe = self.bottleneck(fe)
-        
-        #===testing=====
-        fe = self.down[-1](fe)
-        skips.append(fe)
-        meshes = []
-        #create mesh for the batch
-        for image in fe:
-            mesh = Mesh(file=image)
-            meshes.append(mesh)
-        meshes = np.array(meshes)
-        pool = MeshPool()
-        unpool = MeshUnpool()
-        meshes = pool(meshes)
-        for idx,mesh in enumerate(meshes):     
-            edges = mesh.get_undirected_edges()
-            mesh.update_dictionary(edges,"edge")
-        self.splinebn(meshes)
-        meshes = unpool(meshes)
-        spline1 = SplineConv(1024,512,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
-        for idx,mesh in enumerate(meshes): 
-            v_f = mesh.get_feature()
-            edge = mesh.get_undirected_edges()
-            edge_attribute = mesh.get_attributes(edge).cuda()
-            v_f = spline1(v_f,edge.cuda(),edge_attribute)
-            mesh.update_feature(v_f)
-        fe = []
-        for mesh in meshes:
-
-            fe.append(mesh.get_feature())
-        fe = torch.transpose(torch.stack(fe),2,1).reshape(1,512,34,34)
-        fe = unpad(fe)
-        # #testing purposes =======================
-        # meshes = []
-        # #create mesh for the batch
-        # for image in fe:
-        #     mesh = Mesh(file=image)
-        #     meshes.append(mesh)
-        # meshes = np.array(meshes)
-        # self.splinebn(meshes)
-        # fe = []
-        # for mesh in meshes:
-        #     fe.append(mesh.get_feature())
-        # fe = torch.transpose(torch.stack(fe),2,1).reshape(1,1024,16,16)
-        # #testing purposes=========================
+        fe = self.bottleneck(fe)
         skips = skips[::-1]
         fe = torch.cat((fe,skips[0]),1)
         fe = self.up_conv[0](fe)
@@ -185,7 +141,7 @@ class HybridUnet(nn.Module):
         self.rec_down = nn.ModuleList()
         in_channel = 3
         for out in rec_down_convs:
-            down = rectangular_conv_block(in_channel,out,3)
+            down = recConvBlock(in_channel,out,3)
             self.rec_down.append(down)
             in_channel = out
         self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
@@ -205,7 +161,7 @@ class HybridUnet(nn.Module):
         for out_channel in rec_up_convs:
             up = nn.ConvTranspose2d(in_channel,out_channel,kernel_size=2,stride=2)
             self.rec_up_conv.append(up)
-            self.conv.append(rectangular_conv_block(in_channel,out_channel,3))
+            self.conv.append(recConvBlock(in_channel,out_channel,3))
             in_channel = out_channel
 
         # self.bn = rectangular_conv_block(128,256,3)
@@ -252,10 +208,6 @@ class HybridUnet(nn.Module):
             fe = torch.cat((fe, skips[i]),1)
             fe = self.conv[i](fe)
         fe = self.output(fe).squeeze(1)
-        # end_time = time.time()
-        # elapsed_time = end_time - start_time
-        # print("Hybrid UNET Elapsed time: ", elapsed_time, " seconds")
-        # exit()
         return fe
 
     def __call__self(self,x):
@@ -268,9 +220,9 @@ class MeshEncoder(nn.Module):
         self.down = nn.ModuleList()
         for idx, out_channel in enumerate(convs[1:]):
             if idx > len(convs[1:])-2:
-                down = DownConv(in_channel,convs[-1],False)
+                down = MeshDownConv(in_channel,convs[-1],False)
             else:
-                down = DownConv(in_channel,out_channel,True)
+                down = MeshDownConv(in_channel,out_channel,True)
             self.down.append(down)
             in_channel = out_channel
 
@@ -283,40 +235,6 @@ class MeshEncoder(nn.Module):
     def __call__(self, meshes):
         return self.forward(meshes)
 
-class DownConv(nn.Module):
-    def __init__(self, in_channels, out_channels, pool):
-        super(DownConv, self).__init__()
-        self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.pool = None
-        if(pool):
-            self.pool = MeshPool()
-
-    def __call__(self, meshes):
-        return self.forward(meshes)
-
-    def forward(self, meshes):
-        before_pool = []
-        #Spline Convolution
-        for idx,mesh in enumerate(meshes):     
-            v_f = mesh.get_feature()
-            edges = mesh.get_undirected_edges()
-            edge_attribute = mesh.get_attributes(edges).cuda()
-            v_f = self.conv1(v_f,edges.cuda(),edge_attribute)
-            v_f = F.relu(v_f)
-            v_f = self.conv2(v_f,edges.cuda(),edge_attribute)
-            v_f = F.relu(v_f)
-            if self.pool is not None:
-                before_pool.append(v_f)
-                mesh.update_dictionary(edges,"edge")
-            mesh.update_feature(v_f)
-
-        if self.pool is not None:
-            meshes = self.pool(meshes)
-            before_pool = torch.stack(before_pool)
-            return before_pool
-
-
 class MeshDecoder(nn.Module):
     def __init__(self, up_convs):
         super(MeshDecoder, self).__init__()
@@ -324,58 +242,14 @@ class MeshDecoder(nn.Module):
         in_channel = up_convs[0]
         up_convs = up_convs[1:]
         for idx,out_channel in enumerate(up_convs):
-            up = UpConv(in_channel, out_channel)
+            up = MeshUpConv(in_channel, out_channel)
             self.up.append(up)
             in_channel = out_channel
 
     def forward(self, meshes, encoder_outs):
         encoder_outs = encoder_outs[::-1]
         for idx, up in enumerate(self.up):
-            up(meshes,encoder_outs[idx])
+            meshes = up(meshes,encoder_outs[idx])
 
     def __call__(self, x, encoder_outs):
         return self.forward(x, encoder_outs)
-
-class UpConv(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(UpConv, self).__init__()
-        self.conv1 = SplineConv(in_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.unpool = MeshUnpool()
-
-    def __call__(self, meshes, skips):
-        return self.forward(meshes,skips)
-
-    def forward(self, meshes,skips):
-        meshes = self.unpool(meshes)
-        for idx,mesh in enumerate(meshes): 
-            v_f = mesh.get_feature()
-            edge = mesh.get_undirected_edges()
-            edge_attribute = mesh.get_attributes(edge).cuda()
-            v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
-            v_f = F.relu(v_f)
-            v_f = torch.cat((v_f,skips[idx]),1)
-            v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
-            v_f = F.relu(v_f)
-            v_f = self.conv2(v_f,edge.cuda(),edge_attribute)
-            v_f = F.relu(v_f)
-            mesh.update_feature(v_f)
-
-
-# def reset_params(model): # todo replace with my init
-#     for i, m in enumerate(model.modules()):
-#         weight_init(m)
-
-# def weight_init(m):
-#     if isinstance(m, nn.Conv2d):
-#         nn.init.xavier_normal_(m.weight)
-#         nn.init.constant_(m.bias, 0)
-
-def rectangular_conv_block(in_channel,out_channel,kernel):
-    conv = nn.Sequential(
-        nn.Conv2d(in_channel, out_channel, kernel_size=kernel,padding="same"),
-        nn.ReLU(),
-        nn.Conv2d(out_channel, out_channel, kernel_size=kernel,padding="same"),
-        nn.ReLU()
-    )
-    return conv

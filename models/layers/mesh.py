@@ -8,7 +8,7 @@ class Mesh:
     def __init__(self, file=None):
         self.before_pad_vertices = file.shape[1] * file.shape[2]
         file = pad(file)
-        self.__image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
+        self.image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
         self.epsilon = self.calcEpsilon(file.shape[1],file.shape[2])
         self.vertex_count = None
         self.vs, self.faces = self.__fill_mesh(file.shape[1],file.shape[2])
@@ -91,7 +91,6 @@ class Mesh:
     #Generate adjacency matrix give edges in coo format
     def __adjacency(self,edges):
         num_nodes = edges.max().item() + 1
-        #num_nodes = self.vertex_count
         adj_matrix = torch.sparse_coo_tensor(edges, torch.ones(edges.size(1),dtype=torch.bool), size=(num_nodes, num_nodes))
         adj_matrix = adj_matrix.to_dense()
         return adj_matrix
@@ -117,8 +116,8 @@ class Mesh:
     def merge_vertex(self,edge_id):
         # start_time = time.time()
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
-        max_tensor = torch.dot(self.__image[v_0], self.__image[v_1])
-        self.__image[v_0].data = max_tensor
+        max_tensor = torch.dot(self.image[v_0], self.image[v_1])
+        self.image[v_0].data = max_tensor
         
         neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
         valid_neighbors = neighbors[neighbors != v_0]
@@ -132,7 +131,7 @@ class Mesh:
 
         new_edges = v_0.repeat(valid_neighbors.size(0))
         new_edges = torch.stack((new_edges, valid_neighbors))
-        features = torch.cat((self.__image[new_edges[0]],self.__image[new_edges[1]]),dim=1)
+        features = torch.cat((self.image[new_edges[0]],self.image[new_edges[1]]),dim=1)
         squared_magnitude = torch.sum(features * features, 1)
         edge_ids = torch.arange(self.edge_counts, self.edge_counts+len(features), device=squared_magnitude.device, dtype=torch.float32)
         self.edges = torch.cat((self.edges,new_edges),dim=1)
@@ -142,14 +141,15 @@ class Mesh:
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
         self.collapse_order.append(edge_id)
-        # return heap_items
-        return None
+
+        return heap_items
+        # return None
 
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
         self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
         # self.neighbor = self.compute_neighbor()
-        self.__image = self.__image[self.vertex_mask]
+        self.image = self.image[self.vertex_mask]
         self.update_history()
         self.vs = self.vs[self.vertex_mask]
         self.edges = self.__update_edges()
@@ -181,14 +181,6 @@ class Mesh:
         history = self.history_data.get(category,[])
         history.append(list)
         self.history_data[category] = history
-
-    #setter method to update image
-    def update_feature(self,img):
-        self.__image = img
-
-    #getter method to get the image
-    def get_feature(self):
-        return self.__image
 
     #get the information needed for the unpool operation
     def unroll(self):
