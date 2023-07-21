@@ -4,8 +4,6 @@ from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
 import torch.nn.functional as F
-# from models.layers.mesh_pool import MeshPool
-# from models.layers.mesh_unpool import MeshUnpool
 from models.layers.layer import recConvBlock,MeshDownConv,MeshUpConv
 from models.layers.mesh import Mesh
 import numpy as np
@@ -52,14 +50,14 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
         bottleneck = down[-1]
         up = down[len(down)-2::-1]
         net = Unet(down,bottleneck,up,classes)
+    #Hybrid-UNET    
     elif arch == 'hybrid':
         ncf = opt.ncf
-        rec_down = ncf[:3]
-        # rec_down =ncf[:2]
+
+        rec_down = ncf[:4]
         rec_up = rec_down[::-1]
 
         mesh_down = ncf[3:]
-        # mesh_down = ncf[2:]
         mesh_up = mesh_down[::-1]
         
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
@@ -112,18 +110,19 @@ class Unet(nn.Module):
     def forward(self,x):
         fe = x
         skips = []
-        for down_conv in self.down[:-1]:
+        for down_conv in self.down:
             fe = down_conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
+        
         fe = self.bottleneck(fe)
+
         skips = skips[::-1]
-        fe = torch.cat((fe,skips[0]),1)
-        fe = self.up_conv[0](fe)
-        for i in range(1,len(skips)):
+        for i in range(len(skips)):
             fe = self.up[i](fe)
             fe = torch.cat((fe,skips[i]),1)
             fe = self.up_conv[i](fe)
+        
         fe = self.output(fe).squeeze(1)
         return fe
 

@@ -4,7 +4,7 @@ import albumentations as A
 import matplotlib.pyplot as plt
 from PIL import Image, ImageOps
 from models import create_model
-from options.predict_options import PredictOptions
+from options.inference_options import InferenceOptions
 from utils.util import dice_coefficient
 import os 
 

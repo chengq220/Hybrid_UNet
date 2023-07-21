@@ -1,4 +1,4 @@
 def create_model(opt):
-    from .classifier import ClassifierModel # todo - get rid of this ?
+    from .classifier import ClassifierModel
     model = ClassifierModel(opt)
     return model

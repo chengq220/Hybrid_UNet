@@ -26,7 +26,6 @@ class BaseOptions:
         self.parser.add_argument('--gpu_ids', type=str, default='0',help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--name', type=str, default='debug', help='name of the experiment. It decides where to store samples and models')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
-        self.parser.add_argument('--seed', type=int, help='if specified, uses seed')
         
         # visualization params
         self.parser.add_argument('--export_folder', type=str, default='', help='exports predictions to this folder')
@@ -54,13 +53,6 @@ class BaseOptions:
             torch.cuda.set_device(self.opt.gpu_ids[0])
 
         args = vars(self.opt)
-
-        if self.opt.seed is not None:
-            import numpy as np
-            import random
-            torch.manual_seed(self.opt.seed)
-            np.random.seed(self.opt.seed)
-            random.seed(self.opt.seed)
 
         if self.opt.export_folder:
             self.opt.export_folder = os.path.join(self.opt.checkpoints_dir, self.opt.name, self.opt.export_folder)

@@ -2,9 +2,9 @@
 
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
---name unet_avoid_non_manifold \
---arch unet \
---loss_func bce \
+--name testtest \
+--arch hybrid \
+--loss_func dice \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
 --gpu_ids 4 \

@@ -6,9 +6,9 @@ class Writer:
         self.name = opt.name
         self.opt = opt
         self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
-        self.log_name = os.path.join(self.save_dir, 'loss_log.txt')
-        self.testacc_log = os.path.join(self.save_dir, 'testacc_log.txt')
-        self.start_logs()
+        # self.log_name = os.path.join(self.save_dir, 'loss_log.txt')
+        # self.testacc_log = os.path.join(self.save_dir, 'testacc_log.txt')
+        # self.start_logs()
         self.nexamples = 0
         self.ndice = 0
         #
@@ -17,16 +17,16 @@ class Writer:
         # else:
         self.display = None
 
-    def start_logs(self):
-        """ creates test / train log files """
-        if self.opt.is_train:
-            with open(self.log_name, "a") as log_file:
-                now = time.strftime("%c")
-                log_file.write('================ Training Loss (%s) ================\n' % now)
-        else:
-            with open(self.testacc_log, "a") as log_file:
-                now = time.strftime("%c")
-                log_file.write('================ Testing Acc (%s) ================\n' % now)
+    # def start_logs(self):
+    #     """ creates test / train log files """
+    #     if self.opt.is_train:
+    #         with open(self.log_name, "a") as log_file:
+    #             now = time.strftime("%c")
+    #             log_file.write('================ Training Loss (%s) ================\n' % now)
+    #     else:
+    #         with open(self.testacc_log, "a") as log_file:
+    #             now = time.strftime("%c")
+    #             log_file.write('================ Testing Acc (%s) ================\n' % now)
 
     # def print_current_losses(self, epoch, i, losses, t, t_data):
         # """ prints train loss to terminal / file """
@@ -54,24 +54,24 @@ class Writer:
     #     with open(self.testacc_log, "a") as log_file:
     #         log_file.write('%s\n' % message)
 
-    def plot_acc(self, acc, epoch):
-        if self.display:
-            self.display.add_scalar('data/test_acc', acc, epoch)
+    # def plot_acc(self, acc, epoch):
+    #     if self.display:
+    #         self.display.add_scalar('data/test_acc', acc, epoch)
 
-    def reset_counter(self):
-        """
-        counts # of correct examples
-        """
-        self.ncorrect = 0
-        self.nexamples = 0
+    # def reset_counter(self):
+    #     """
+    #     counts # of correct examples
+    #     """
+    #     self.ncorrect = 0
+    #     self.nexamples = 0
 
-    def update_counter(self, ndice, nexamples):
-        self.ndice += ndice
-        self.nexamples += nexamples
+    # def update_counter(self, ndice, nexamples):
+    #     self.ndice += ndice
+    #     self.nexamples += nexamples
 
-    @property
-    def acc(self):
-        return float(self.ndice) / self.nexamples
+    # @property
+    # def acc(self):
+    #     return float(self.ndice) / self.nexamples
 
     # def close(self):
     #     if self.display is not None:
