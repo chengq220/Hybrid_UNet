@@ -1,15 +1,17 @@
 import torch
 import numpy as np
-from models.layers.mesh_pool import MeshPool
-# from mesh_unpool import MeshUnpool
-# import time
+# from models.layers.mesh_pool import MeshPool
+from utils.util import pad
 
 
 class Mesh:
     def __init__(self, file=None):
+        self.before_pad_vertices = file.shape[1] * file.shape[2]
+        file = pad(file)
         self.__image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
+        self.epsilon = self.calcEpsilon(file.shape[1],file.shape[2])
         self.vertex_count = None
-        self.vs, self.faces = self.__fill_mesh2(file.shape[1],file.shape[2])
+        self.vs, self.faces = self.__fill_mesh(file.shape[1],file.shape[2])
         #return the directed edges in the coo format
         self.edges, self.edge_counts = self.__get_edges(self.faces)
         self.adj_matrix = self.__adjacency(self.edges)
@@ -24,7 +26,7 @@ class Mesh:
         }
 
     #create a mesh
-    def __fill_mesh2(self,length, width):
+    def __fill_mesh(self,length, width):
         size = length * width
         self.vertex_count = size
         # The vertices position of the regular triangular mesh
@@ -90,7 +92,7 @@ class Mesh:
     def __adjacency(self,edges):
         num_nodes = edges.max().item() + 1
         #num_nodes = self.vertex_count
-        adj_matrix = torch.sparse_coo_tensor(edges, torch.ones(edges.size(1)), size=(num_nodes, num_nodes))
+        adj_matrix = torch.sparse_coo_tensor(edges, torch.ones(edges.size(1),dtype=torch.bool), size=(num_nodes, num_nodes))
         adj_matrix = adj_matrix.to_dense()
         return adj_matrix
 
@@ -115,13 +117,15 @@ class Mesh:
     def merge_vertex(self,edge_id):
         # start_time = time.time()
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
-        max_tensor = torch.max(self.__image[v_0], self.__image[v_1])
+        max_tensor = torch.dot(self.__image[v_0], self.__image[v_1])
         self.__image[v_0].data = max_tensor
         
         neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
         valid_neighbors = neighbors[neighbors != v_0]
 
         # Update the adjacency matrix
+        # print(valid_neighbors)
+
         self.adj_matrix[:, v_1] = False
         self.adj_matrix[v_1,:] = False
         self.adj_matrix[v_0, valid_neighbors] = True
@@ -138,12 +142,8 @@ class Mesh:
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
         self.collapse_order.append(edge_id)
-
-        return heap_items
-
-    # def compute_neighbor(self):
-    #     adj = self.adj_matrix + torch.transpose(self.adj_matrix,1,0)
-    #     return adj @ adj.t()
+        # return heap_items
+        return None
 
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
@@ -197,3 +197,7 @@ class Mesh:
         pool_order = self.history_data['collapse_order'].pop()
         edges = self.history_data['edge'].pop()
         return vertex, vertex_mask, pool_order, edges
+
+    @staticmethod
+    def calcEpsilon(length,width):
+        return float(1)/(length*width)

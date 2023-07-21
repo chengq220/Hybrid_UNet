@@ -28,13 +28,13 @@ class Writer:
                 now = time.strftime("%c")
                 log_file.write('================ Testing Acc (%s) ================\n' % now)
 
-    def print_current_losses(self, epoch, i, losses, t, t_data):
-        """ prints train loss to terminal / file """
-        message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) loss: %.3f ' \
-                  % (epoch, i, t, t_data, losses.item())
-        print(message)
-        with open(self.log_name, "a") as log_file:
-            log_file.write('%s\n' % message)
+    # def print_current_losses(self, epoch, i, losses, t, t_data):
+        # """ prints train loss to terminal / file """
+        # message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) loss: %.3f ' \
+        #           % (epoch, i, t, t_data, losses.item())
+        # print(message)
+        # with open(self.log_name, "a") as log_file:
+        #     log_file.write('%s\n' % message)
 
     # def plot_loss(self, loss, epoch, i, n):
     #     iters = i + (epoch - 1) * n
@@ -46,13 +46,13 @@ class Writer:
     #         for name, param in model.net.named_parameters():
     #             self.display.add_histogram(name, param.clone().cpu().data.numpy(), epoch)
 
-    def print_acc(self, epoch, acc):
-        """ prints test accuracy to terminal / file """
-        message = 'epoch: {}, Dice Coefficient: [{:.5} ]\n' \
-            .format(epoch, acc)
-        print(message)
-        with open(self.testacc_log, "a") as log_file:
-            log_file.write('%s\n' % message)
+    # def print_acc(self, epoch, acc):
+    #     """ prints test accuracy to terminal / file """
+    #     message = 'epoch: {}, Dice Coefficient: [{:.5} ]\n' \
+    #         .format(epoch, acc)
+    #     print(message)
+    #     with open(self.testacc_log, "a") as log_file:
+    #         log_file.write('%s\n' % message)
 
     def plot_acc(self, acc, epoch):
         if self.display:
@@ -73,6 +73,6 @@ class Writer:
     def acc(self):
         return float(self.ndice) / self.nexamples
 
-    def close(self):
-        if self.display is not None:
-            self.display.close()
+    # def close(self):
+    #     if self.display is not None:
+    #         self.display.close()

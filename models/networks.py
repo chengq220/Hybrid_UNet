@@ -11,6 +11,7 @@ import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
 from torch_geometric.nn import SplineConv
+from utils.util import unpad
 import wandb
 import time
 
@@ -52,12 +53,14 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
         net = Unet(down,bottleneck,up,classes)
     elif arch == 'hybrid':
         ncf = opt.ncf
-        rec_down = ncf[:2]
+        rec_down = ncf[:3]
+        # rec_down =ncf[:2]
         rec_up = rec_down[::-1]
 
-        mesh_down = ncf[2:]
-        mesh_up = mesh_down[::-1] 
-
+        mesh_down = ncf[3:]
+        # mesh_down = ncf[2:]
+        mesh_up = mesh_down[::-1]
+        
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
     else:
         raise NotImplementedError('Encoder model name [%s] is not recognized' % arch)
@@ -80,7 +83,7 @@ def define_loss(opt):
 class Unet(nn.Module):
     """UNET implementation 
     """
-    def __init__(self, down_convs, bottleneck, up_convs,output):
+    def __init__(self, down_convs, bottleneck, up_convs, output):
         super(Unet,self).__init__()
         self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
         self.down_convs = down_convs[:len(down_convs)-1]
@@ -91,9 +94,9 @@ class Unet(nn.Module):
         for out_channels in self.down_convs:
             self.down.append(rectangular_conv_block(in_channels, out_channels,3))
             in_channels = out_channels
-
         ##bottleneck
         self.bottleneck = rectangular_conv_block(self.down_convs[-1],bottleneck,3)
+        self.splinebn = DownConv(self.down_convs[-1],bottleneck,False)
 
         ## Decoder
         in_channel = bottleneck
@@ -109,18 +112,62 @@ class Unet(nn.Module):
     def forward(self,x):
         fe = x
         skips = []
-        for down_conv in self.down:
+        for down_conv in self.down[:-1]:
             fe = down_conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
-        fe = self.bottleneck(fe)
+        # fe = self.bottleneck(fe)
+        
+        #===testing=====
+        fe = self.down[-1](fe)
+        skips.append(fe)
+        meshes = []
+        #create mesh for the batch
+        for image in fe:
+            mesh = Mesh(file=image)
+            meshes.append(mesh)
+        meshes = np.array(meshes)
+        pool = MeshPool()
+        unpool = MeshUnpool()
+        meshes = pool(meshes)
+        for idx,mesh in enumerate(meshes):     
+            edges = mesh.get_undirected_edges()
+            mesh.update_dictionary(edges,"edge")
+        self.splinebn(meshes)
+        meshes = unpool(meshes)
+        spline1 = SplineConv(1024,512,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
+        for idx,mesh in enumerate(meshes): 
+            v_f = mesh.get_feature()
+            edge = mesh.get_undirected_edges()
+            edge_attribute = mesh.get_attributes(edge).cuda()
+            v_f = spline1(v_f,edge.cuda(),edge_attribute)
+            mesh.update_feature(v_f)
+        fe = []
+        for mesh in meshes:
 
+            fe.append(mesh.get_feature())
+        fe = torch.transpose(torch.stack(fe),2,1).reshape(1,512,34,34)
+        fe = unpad(fe)
+        # #testing purposes =======================
+        # meshes = []
+        # #create mesh for the batch
+        # for image in fe:
+        #     mesh = Mesh(file=image)
+        #     meshes.append(mesh)
+        # meshes = np.array(meshes)
+        # self.splinebn(meshes)
+        # fe = []
+        # for mesh in meshes:
+        #     fe.append(mesh.get_feature())
+        # fe = torch.transpose(torch.stack(fe),2,1).reshape(1,1024,16,16)
+        # #testing purposes=========================
         skips = skips[::-1]
-        for i in range(len(skips)):
+        fe = torch.cat((fe,skips[0]),1)
+        fe = self.up_conv[0](fe)
+        for i in range(1,len(skips)):
             fe = self.up[i](fe)
             fe = torch.cat((fe,skips[i]),1)
             fe = self.up_conv[i](fe)
-        
         fe = self.output(fe).squeeze(1)
         return fe
 
@@ -161,11 +208,11 @@ class HybridUnet(nn.Module):
             self.conv.append(rectangular_conv_block(in_channel,out_channel,3))
             in_channel = out_channel
 
-        ##output
+        # self.bn = rectangular_conv_block(128,256,3)
         self.output = nn.Conv2d(rec_up_convs[-1],output,kernel_size=1,padding="same")
 
     def forward(self,x):
-        start_time = time.time()
+        # start_time = time.time()
         #################################################
         # Regular UNET downsampling
         fe = x
@@ -174,6 +221,7 @@ class HybridUnet(nn.Module):
             fe = conv(fe)
             skips.append(fe)
             fe = self.maxpool(fe)
+        # fe = self.bn(fe)
 
         image_size = fe.shape[2]*fe.shape[3]
         ##################################################
@@ -196,17 +244,18 @@ class HybridUnet(nn.Module):
         out = torch.transpose(torch.stack(out),2,1)
         fe = out.reshape(out.shape[0],out.shape[1],fe.shape[2],fe.shape[3])
 
-        # ##################################################################
-        # # Regular Unet UpSampling
+        ##################################################################
+        # Regular Unet UpSampling
         skips = skips[::-1]
         for i in range(len(self.rec_up_conv)):
             fe = self.rec_up_conv[i](fe)
             fe = torch.cat((fe, skips[i]),1)
             fe = self.conv[i](fe)
         fe = self.output(fe).squeeze(1)
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print("Network Elapsed time:", elapsed_time, " seconds")
+        # end_time = time.time()
+        # elapsed_time = end_time - start_time
+        # print("Hybrid UNET Elapsed time: ", elapsed_time, " seconds")
+        # exit()
         return fe
 
     def __call__self(self,x):
@@ -313,14 +362,14 @@ class UpConv(nn.Module):
             mesh.update_feature(v_f)
 
 
-def reset_params(model): # todo replace with my init
-    for i, m in enumerate(model.modules()):
-        weight_init(m)
+# def reset_params(model): # todo replace with my init
+#     for i, m in enumerate(model.modules()):
+#         weight_init(m)
 
-def weight_init(m):
-    if isinstance(m, nn.Conv2d):
-        nn.init.xavier_normal_(m.weight)
-        nn.init.constant_(m.bias, 0)
+# def weight_init(m):
+#     if isinstance(m, nn.Conv2d):
+#         nn.init.xavier_normal_(m.weight)
+#         nn.init.constant_(m.bias, 0)
 
 def rectangular_conv_block(in_channel,out_channel,kernel):
     conv = nn.Sequential(

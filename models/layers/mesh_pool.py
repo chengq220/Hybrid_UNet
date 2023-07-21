@@ -3,6 +3,7 @@ import torch.nn as nn
 from threading import Thread
 import numpy as np
 from heapq import heappop, heapify
+import heapq
 
 
 class MeshPool(nn.Module):
@@ -16,7 +17,8 @@ class MeshPool(nn.Module):
 
     def forward(self, meshes):
         pool_threads = []
-        self.__out_target = meshes[0].vertex_count//2
+        num_vertex_delete = meshes[0].before_pad_vertices - meshes[0].before_pad_vertices // 2
+        self.__out_target = meshes[0].vertex_count - num_vertex_delete
         self.out = []
         self.__meshes = meshes
         # iterate over batch
@@ -47,7 +49,9 @@ class MeshPool(nn.Module):
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
-        if self.is_valid(mesh,edge_id):
+        if self.is_boundary(mesh,edge_id):
+            return None
+        elif self.is_valid(mesh,edge_id):
             return mesh.merge_vertex(edge_id)
         else:
             return None
@@ -59,6 +63,23 @@ class MeshPool(nn.Module):
         v_1_n = mesh.adj_matrix[:, v_1] + mesh.adj_matrix[v_1]
         shared = v_0_n & v_1_n
         return (shared.sum() == 2).item()
+
+    @staticmethod
+    def is_boundary(mesh, edge_id):
+        v_0, v_1 = mesh.vs[mesh.edges[0, edge_id]], mesh.vs[mesh.edges[1, edge_id]]  # get the spacial position of the vertex
+        epsilon = mesh.epsilon
+        boundary_check = ((v_0[0] < epsilon) | (v_0[0] > 1 - epsilon) |
+                          (v_0[1] < epsilon) | (v_0[1] > 1 - epsilon) |
+                          (v_1[0] < epsilon) | (v_1[0] > 1 - epsilon) |
+                          (v_1[1] < epsilon) | (v_1[1] > 1 - epsilon))
+        return boundary_check
+
+    @staticmethod
+    def update_q(q, items):
+        queue = q
+        queue.extend(items)
+        heapq.heapify(queue)
+        return queue
 
     def __build_queue(self, features, edges_count):
         # delete edges with smallest norm

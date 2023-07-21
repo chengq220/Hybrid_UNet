@@ -11,54 +11,32 @@ import wandb
 
 if __name__ == '__main__':
     opt = TrainOptions().parse()
+    model = create_model(opt)
     dataset = DataLoader(opt)
     dataset_size = len(dataset)
-    model = create_model(opt)
     writer = Writer(opt)
     total_steps = 0
     best_loss = 1 
 
-    # run = wandb.init(
-    #     project="project"
-    # )
+    # wandb.init(project="small_dataset")
+    # wandb.watch(model.net, log='all')
 
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
-        epoch_start_time = time.time()
-        iter_data_time = time.time()
-        epoch_iter = 0
-
+        total_steps += 1
+        train_loss = 0
         for i, data in enumerate(dataset):
-            iter_start_time = time.time()
-            if total_steps % opt.print_freq == 0:
-                t_data = iter_start_time - iter_data_time
-            total_steps += opt.batch_size
-            epoch_iter += opt.batch_size
             model.set_input(data)
             model.optimize_parameters()
+            model.save_network('latest')
+            train_loss += model.loss
+        #     exit()
+        # exit()
+        train_loss /= dataset_size   
+        if(train_loss < best_loss):
+            model.save_network('best')
+        best_loss = train_loss
+        test_acc = run_test(epoch)
+        val_acc = predict(total_steps)
 
-            if total_steps % opt.print_freq == 0: #change it so that it track the loss for the whole epoch not individal iterations
-                loss = model.loss
-                t = (time.time() - iter_start_time) / opt.batch_size
-                writer.print_current_losses(epoch, epoch_iter, loss, t, t_data)
-                if(loss < best_loss):
-                    model.save_network('best')
-                best_loss = loss
-
-            if i % opt.save_latest_freq == 0:
-                model.save_network('latest')
-            
-            if total_steps % 2000 == 0:
-                predict(total_steps)
-
-            iter_data_time = time.time()
-
-        print('End of epoch %d / %d \t Time Taken: %d sec' %
-              (epoch, opt.niter + opt.niter_decay, time.time() - epoch_start_time))
-        model.update_learning_rate()
-
-        if epoch % opt.run_test_freq == 0:
-            acc = run_test(epoch)
-            writer.plot_acc(acc, epoch)
-        # wandb.log({"accuracy": acc ,"loss": loss})
-
-    writer.close()
+        # model.update_learning_rate()
+        # wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
