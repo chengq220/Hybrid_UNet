@@ -123,11 +123,9 @@ class Mesh:
         neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
         valid_neighbors = neighbors[neighbors != v_0]
 
-        neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
-        valid_neighbors = neighbors[neighbors != v_0]
-
         # Update the adjacency matrix
         # print(valid_neighbors)
+
         self.adj_matrix[:, v_1] = False
         self.adj_matrix[v_1,:] = False
         self.adj_matrix[v_0, valid_neighbors] = True
@@ -140,7 +138,6 @@ class Mesh:
         self.edges = torch.cat((self.edges,new_edges),dim=1)
         self.edge_counts += new_edges[0].size(0)
         heap_items = torch.stack((squared_magnitude, edge_ids),dim=1).tolist()
-
 
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
