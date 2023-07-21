@@ -10,7 +10,7 @@ import os
 
 def predict(steps=5):
     print("Running Prediction")
-    opt = PredictOptions().parse()
+    opt = InferenceOptions().parse()
     resize = opt.resize
     img_transform = A.Compose([
         A.CenterCrop(resize[0],resize[1]),
