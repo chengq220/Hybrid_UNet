@@ -61,6 +61,10 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
         mesh_up = mesh_down[::-1]
         
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
+
+    elif arch == 'test':
+        net = TestNet()
+
     else:
         raise NotImplementedError('Encoder model name [%s] is not recognized' % arch)
     return init_net(net, gpu_ids)
@@ -255,3 +259,58 @@ class MeshDecoder(nn.Module):
 
     def __call__(self, x, encoder_outs):
         return self.forward(x, encoder_outs)
+
+class TestNet(nn.Module):
+    """UNET implementation 
+    """
+    def __init__(self):
+        super(TestNet,self).__init__()
+        self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
+        self.down1 = recConvBlock(3,64,3)
+        self.down2 = recConvBlock(64,128,3)
+        self.down3 = recConvBlock(128,256,3)
+        self.down4 = recConvBlock(256,512,3)
+        self.bn = recConvBlock(512,1024,3)
+        self.unpool1 = nn.ConvTranspose2d(1024,512,kernel_size=2,stride=2)
+        self.up1 = recConvBlock(1024,512,3)
+        self.unpool2 = nn.ConvTranspose2d(512,256,kernel_size=2,stride=2)
+        self.up2 = recConvBlock(512,256,3)
+        self.unpool3 = nn.ConvTranspose2d(256,128,kernel_size=2,stride=2)
+        self.up3 = recConvBlock(256,128,3)
+        self.unpool4 = nn.ConvTranspose2d(128,64,kernel_size=2,stride=2)
+        self.up4 = recConvBlock(128,64,3)
+        self.output = nn.Conv2d(64,1,3)
+
+    def forward(self,x):
+        #down-sampling
+        fe = x
+        b_pool1 = self.down1(fe)
+        fe = self.maxpool(b_pool1)
+        b_pool2 = self.down2(fe)
+        fe = self.maxpool(b_pool2)
+        b_pool3 = self.down3(fe)
+        fe = self.maxpool(b_pool3)
+        b_pool4 = self.down4(fe)
+        fe = self.maxpool(b_pool4)
+
+        #bottleneck
+        fe = self.bn(fe)
+
+        #upsampling
+        unpool1 = self.unpool1(fe)
+        fe = torch.cat((b_pool4,unpool1),1)
+        fe = self.up1(fe)
+        unpool2 = self.unpool2(fe)
+        fe = torch.cat((b_pool3,unpool2),1)
+        fe = self.up2(fe)
+        unpool3 = self.unpool3(fe)
+        fe = torch.cat((b_pool2,unpool3),1)
+        fe = self.up3(fe)
+        unpool4 = self.unpool4(fe)
+        fe = torch.cat((b_pool1, unpool4),1)
+        fe = self.up4(fe)
+        fe = self.output(fe).squeeze(1)
+        return fe
+
+    def __call__self(self,x):
+        return self.forward(x)

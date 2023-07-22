@@ -29,7 +29,9 @@ if __name__ == '__main__':
             model.optimize_parameters()
             model.save_network('latest')
             train_loss += model.loss
-        train_loss /= dataset_size   
+            exit()
+        train_loss /= dataset_size 
+        exit()  
         if(train_loss < best_loss):
             model.save_network('best')
         best_loss = train_loss
