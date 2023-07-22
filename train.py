@@ -18,8 +18,8 @@ if __name__ == '__main__':
     total_steps = 0
     best_loss = 1 
 
-    # wandb.init(project="small_dataset")
-    # wandb.watch(model.net, log='all')
+    wandb.init(project="small_dataset")
+    wandb.watch(model.net, log='all')
 
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
         total_steps += 1
@@ -36,5 +36,5 @@ if __name__ == '__main__':
         test_acc = run_test(epoch)
         val_acc = predict(total_steps)
 
-        # model.update_learning_rate()
-        # wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
+        model.update_learning_rate()
+        wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
