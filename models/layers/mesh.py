@@ -9,6 +9,7 @@ class Mesh:
         self.before_pad_vertices = file.shape[1] * file.shape[2]
         file = pad(file)
         self.image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
+        self.update_matrix = torch.zeros_like(self.image)
         self.epsilon = self.calcEpsilon(file.shape[1],file.shape[2])
         self.vertex_count = None
         self.vs, self.faces = self.__fill_mesh(file.shape[1],file.shape[2])
@@ -116,8 +117,9 @@ class Mesh:
     def merge_vertex(self,edge_id):
         # start_time = time.time()
         v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
-        max_tensor = torch.dot(self.image[v_0], self.image[v_1])
-        self.image[v_0].data = max_tensor
+        
+        max_tensor = torch.max(self.image[v_0], self.image[v_1])
+        self.update_matrix[v_0] = max_tensor - self.image[v_0]
         
         neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
         valid_neighbors = neighbors[neighbors != v_0]
@@ -129,27 +131,28 @@ class Mesh:
         self.adj_matrix[v_1,:] = False
         self.adj_matrix[v_0, valid_neighbors] = True
 
-        new_edges = v_0.repeat(valid_neighbors.size(0))
-        new_edges = torch.stack((new_edges, valid_neighbors))
-        features = torch.cat((self.image[new_edges[0]],self.image[new_edges[1]]),dim=1)
-        squared_magnitude = torch.sum(features * features, 1)
-        edge_ids = torch.arange(self.edge_counts, self.edge_counts+len(features), device=squared_magnitude.device, dtype=torch.float32)
-        self.edges = torch.cat((self.edges,new_edges),dim=1)
-        self.edge_counts += new_edges[0].size(0)
-        heap_items = torch.stack((squared_magnitude, edge_ids),dim=1).tolist()
+        # new_edges = v_0.repeat(valid_neighbors.size(0))
+        # new_edges = torch.stack((new_edges, valid_neighbors))
+        # features = torch.cat((self.image[new_edges[0]],self.image[new_edges[1]]),dim=1)
+        # squared_magnitude = torch.sum(features * features, 1)
+        # edge_ids = torch.arange(self.edge_counts, self.edge_counts+len(features), device=squared_magnitude.device, dtype=torch.float32)
+        # self.edges = torch.cat((self.edges,new_edges),dim=1)
+        # self.edge_counts += new_edges[0].size(0)
+        # heap_items = torch.stack((squared_magnitude, edge_ids),dim=1).tolist()
 
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
         self.collapse_order.append(edge_id)
 
-        return heap_items
-        # return None
+        # return heap_items
+        return None
 
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
         self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
-        # self.neighbor = self.compute_neighbor()
+        self.image = self.image + self.update_matrix
         self.image = self.image[self.vertex_mask]
+        self.update_matrix = torch.zeros_like(self.image)
         self.update_history()
         self.vs = self.vs[self.vertex_mask]
         self.edges = self.__update_edges()
