@@ -300,33 +300,21 @@ class TestNet(nn.Module):
         fe = self.maxpool(b_pool2)
         b_pool3 = self.down3(fe)
         fe = self.maxpool(b_pool3)
-        b_pool4 = self.down4(fe)
-        fe = b_pool4
+        #b_pool4 = self.down4(fe)
+        #fe = b_pool4
         # fe = self.maxpool(b_pool4)
-
+        # print(fe.shape)
         meshes = []
-        before_pool = []
         for image in fe:
             mesh = Mesh(file=image)
             meshes.append(mesh)
-            before_pool.append(mesh.image)
         meshes = np.array(meshes)
-        before_pool = torch.stack(before_pool)
-
-        meshes = self.meshPool(meshes)
-        for idx,mesh in enumerate(meshes):     
-            edges = mesh.get_undirected_edges()
-            mesh.update_dictionary(edges,"edge")
+        before_pool= self.meshDown1(meshes)
         self.meshBn(meshes)
-        meshes = self.meshUnpool(meshes)
+        meshes = self.meshUp1(meshes,before_pool)
         fe = []
-        for idx,mesh in enumerate(meshes): 
-            v_f = mesh.image
-            edge = mesh.get_undirected_edges()
-            edge_attribute = mesh.get_attributes(edge).cuda()
-            v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
-            v_f = F.relu(v_f)
-            fe.append(v_f)
+        for mesh in meshes:
+            fe.append(mesh.image)
         fe = torch.transpose(torch.stack(fe),2,1)
         fe = fe.reshape(1,512,34,34)
         fe = unpad(fe)
@@ -336,8 +324,8 @@ class TestNet(nn.Module):
 
         #upsampling
         # unpool1 = self.unpool1(fe)
-        fe = torch.cat((b_pool4,fe),1)
-        fe = self.up1(fe)
+        # fe = torch.cat((b_pool4,fe),1)
+        # fe = self.up1(fe)
         unpool2 = self.unpool2(fe)
         fe = torch.cat((b_pool3,unpool2),1)
         fe = self.up2(fe)
@@ -348,8 +336,6 @@ class TestNet(nn.Module):
         fe = torch.cat((b_pool1, unpool4),1)
         fe = self.up4(fe)
         out = self.output(fe).squeeze(1)
-        # print(out.shape)
-        # exit()
         # end_time = time.time()
         # elapsed_time = end_time - start_time
         # print("Elapsed time:", elapsed_time, "seconds")

@@ -2,7 +2,7 @@
 
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
---name fix_pool \
+--name layers2spline_layer1pool \
 --arch test \
 --loss_func dice \
 --resize 256 256 \

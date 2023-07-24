@@ -9,7 +9,7 @@ class Mesh:
         self.before_pad_vertices = file.shape[1] * file.shape[2]
         file = pad(file)
         self.image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
-        self.update_matrix = torch.zeros_like(self.image)
+        self.update_matrix = None
         self.epsilon = self.calcEpsilon(file.shape[1],file.shape[2])
         self.vertex_count = None
         self.vs, self.faces = self.__fill_mesh(file.shape[1],file.shape[2])
@@ -145,6 +145,9 @@ class Mesh:
 
         # return heap_items
         return None
+
+    def initiateUpdate(self):
+        self.update_matrix = torch.zeros_like(self.image)
 
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):
