@@ -9,7 +9,7 @@ class Mesh:
         self.before_pad_vertices = file.shape[1] * file.shape[2]
         file = pad(file)
         self.image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
-        self.update_matrix = torch.zeros_like(self.image)
+        self.update_matrix = None
         self.epsilon = self.calcEpsilon(file.shape[1],file.shape[2])
         self.vertex_count = None
         self.vs, self.faces = self.__fill_mesh(file.shape[1],file.shape[2])
@@ -159,6 +159,9 @@ class Mesh:
         self.edge_counts = self.edges.shape[1]
         self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
         self.collapse_order = []
+
+    def initiateUpdate(self):
+        self.update_matrix = torch.zeros_like(self.image)
 
     #update the dictionary that contains all the information
     def update_history(self):
