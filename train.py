@@ -29,14 +29,15 @@ if __name__ == '__main__':
             model.optimize_parameters()
             model.save_network('latest')
             train_loss += model.loss
-            exit()
-        train_loss /= dataset_size 
-        exit()  
+        #     exit()
+        # exit()
+        train_loss /= dataset_size  
         if(train_loss < best_loss):
             model.save_network('best')
         best_loss = train_loss
         test_acc = run_test(epoch)
         val_acc = predict(total_steps)
-
-        model.update_learning_rate()
+        
+        # #model.update_learning_rate()
         wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
+

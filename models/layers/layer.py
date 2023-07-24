@@ -30,7 +30,6 @@ class MeshDownConv(nn.Module):
 
     def forward(self, meshes):
         before_pool = []
-        #Spline Convolution
         for idx,mesh in enumerate(meshes):     
             v_f = mesh.image
             edges = mesh.get_undirected_edges()
@@ -59,7 +58,7 @@ class MeshUpConv(nn.Module):
     def __call__(self, meshes, skips):
         return self.forward(meshes,skips)
 
-    def forward(self, meshes,skips):
+    def forward(self, meshes, skips):
         meshes = self.unpool(meshes)
         for idx,mesh in enumerate(meshes): 
             v_f = mesh.image

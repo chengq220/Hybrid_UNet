@@ -5,6 +5,8 @@ import functools
 from torch.optim import lr_scheduler
 import torch.nn.functional as F
 from models.layers.layer import recConvBlock,MeshDownConv,MeshUpConv
+from models.layers.mesh_unpool import MeshUnpool
+from models.layers.mesh_pool import MeshPool
 from models.layers.mesh import Mesh
 import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
@@ -279,9 +281,17 @@ class TestNet(nn.Module):
         self.up3 = recConvBlock(256,128,3)
         self.unpool4 = nn.ConvTranspose2d(128,64,kernel_size=2,stride=2)
         self.up4 = recConvBlock(128,64,3)
-        self.output = nn.Conv2d(64,1,3)
+        self.output = nn.Conv2d(64,1,kernel_size=3,padding="same")
+
+        self.meshDown1 = MeshDownConv(256,512,True)
+        self.meshBn = MeshDownConv(512,1024,False)
+        self.meshUp1 = MeshUpConv(1024,512)
+        self.conv1 = SplineConv(1024, 512,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.meshUnpool = MeshUnpool()
+        self.meshPool = MeshPool()
 
     def forward(self,x):
+        start_time = time.time()
         #down-sampling
         fe = x
         b_pool1 = self.down1(fe)
@@ -291,14 +301,42 @@ class TestNet(nn.Module):
         b_pool3 = self.down3(fe)
         fe = self.maxpool(b_pool3)
         b_pool4 = self.down4(fe)
-        fe = self.maxpool(b_pool4)
+        fe = b_pool4
+        # fe = self.maxpool(b_pool4)
+
+        meshes = []
+        before_pool = []
+        for image in fe:
+            mesh = Mesh(file=image)
+            meshes.append(mesh)
+            before_pool.append(mesh.image)
+        meshes = np.array(meshes)
+        before_pool = torch.stack(before_pool)
+
+        meshes = self.meshPool(meshes)
+        for idx,mesh in enumerate(meshes):     
+            edges = mesh.get_undirected_edges()
+            mesh.update_dictionary(edges,"edge")
+        self.meshBn(meshes)
+        meshes = self.meshUnpool(meshes)
+        fe = []
+        for idx,mesh in enumerate(meshes): 
+            v_f = mesh.image
+            edge = mesh.get_undirected_edges()
+            edge_attribute = mesh.get_attributes(edge).cuda()
+            v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
+            v_f = F.relu(v_f)
+            fe.append(v_f)
+        fe = torch.transpose(torch.stack(fe),2,1)
+        fe = fe.reshape(1,512,34,34)
+        fe = unpad(fe)
 
         #bottleneck
-        fe = self.bn(fe)
+        # fe = self.bn(fe)
 
         #upsampling
-        unpool1 = self.unpool1(fe)
-        fe = torch.cat((b_pool4,unpool1),1)
+        # unpool1 = self.unpool1(fe)
+        fe = torch.cat((b_pool4,fe),1)
         fe = self.up1(fe)
         unpool2 = self.unpool2(fe)
         fe = torch.cat((b_pool3,unpool2),1)
@@ -309,8 +347,13 @@ class TestNet(nn.Module):
         unpool4 = self.unpool4(fe)
         fe = torch.cat((b_pool1, unpool4),1)
         fe = self.up4(fe)
-        fe = self.output(fe).squeeze(1)
-        return fe
+        out = self.output(fe).squeeze(1)
+        # print(out.shape)
+        # exit()
+        # end_time = time.time()
+        # elapsed_time = end_time - start_time
+        # print("Elapsed time:", elapsed_time, "seconds")
+        return out
 
     def __call__self(self,x):
         return self.forward(x)
