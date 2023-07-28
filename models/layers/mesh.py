@@ -141,6 +141,7 @@ class Mesh:
 
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
+        self.before_pad_vertices = self.before_pad_vertices - 1
         self.collapse_order.append(edge_id)
 
         # return heap_items

@@ -3,6 +3,8 @@ import torch.nn as nn
 from . import networks
 from os.path import join
 from torchmetrics import Dice
+from torch.profiler import profile, record_function, ProfilerActivity
+import time
 
 class ClassifierModel:
     """ Class for training Model weights
@@ -40,7 +42,11 @@ class ClassifierModel:
         self.labels = labels.to(self.device)
         
     def forward(self):
+        # with profiler.profile(with_stack=True, profile_memory=True) as prof:
+        #     with torch.autograd.profiler.emit_nvtx():  # (Optional) To visualize the operation in NVIDIA Nsight Systems
+        #     # with torch.autograd.profiler.emit_nvtx():
         out = self.net(self.features)
+
         return out
 
     def backward(self, out):
@@ -48,9 +54,13 @@ class ClassifierModel:
         self.loss.backward()
 
     def optimize_parameters(self):
+        # with profile(activities=[ProfilerActivity.CPU], record_shapes=True, use_cuda=True) as prof:
         self.optimizer.zero_grad()
+        # with record_function("forward"):
         out = self.forward()
+        # with record_function("backward"):
         self.backward(out)
+        # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10)) 
         self.optimizer.step()
 
 

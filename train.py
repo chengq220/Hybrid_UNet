@@ -6,22 +6,26 @@ from models import create_model
 from utils.writer import Writer
 from test import run_test
 from predict import predict
+from torch.profiler import profile, record_function, ProfilerActivity
 import wandb
+import csv
 
 
 if __name__ == '__main__':
-    opt = TrainOptions().parse()
+    opt = TrainOptions().parse()    
     model = create_model(opt)
+    model.load_network("latest")
     dataset = DataLoader(opt)
     dataset_size = len(dataset)
     writer = Writer(opt)
     total_steps = 0
     best_loss = 1 
 
-    wandb.init(project="small_dataset")
+    wandb.init(project="small_dataset",resume=True)
     wandb.watch(model.net, log='all')
 
-    for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
+    # for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
+    for epoch in range(53, opt.niter + opt.niter_decay + 1):
         total_steps += 1
         train_loss = 0
         for i, data in enumerate(dataset):
@@ -29,15 +33,17 @@ if __name__ == '__main__':
             model.optimize_parameters()
             model.save_network('latest')
             train_loss += model.loss
-        #     exit()
-        # exit()
+
         train_loss /= dataset_size  
         if(train_loss < best_loss):
             model.save_network('best')
-        best_loss = train_loss
+            best_loss = train_loss
         test_acc = run_test(epoch)
         val_acc = predict(total_steps)
-        
-        # #model.update_learning_rate()
-        wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
+    
+    # #model.update_learning_rate()
+    wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
+    # e = time.time()
+    # print(str(e-s) + " seconds")
+    # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10)) 
 

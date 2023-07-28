@@ -2,11 +2,11 @@
 
 python predict.py \
 --dataroot datasets/CVC-ClinicDB \
---name fix_pool \
+--name full_test_3_layer \
 --arch test \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
---gpu_ids 4 \
---pred datasets/CVC-ClinicDB/train1/612.png \
---label datasets/CVC-ClinicDB/GroundTruth/612.png \
+--gpu_ids 5 \
+--pred datasets/CVC-ClinicDB/test/270.png \
+--label datasets/CVC-ClinicDB/GroundTruth/270.png \
 --export_folder manual_pred

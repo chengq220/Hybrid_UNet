@@ -13,6 +13,7 @@ from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
 from torch_geometric.nn import SplineConv
 from utils.util import unpad
+from torch.profiler import profile, record_function, ProfilerActivity
 import wandb
 import time
 
@@ -283,42 +284,51 @@ class TestNet(nn.Module):
         self.up4 = recConvBlock(128,64,3)
         self.output = nn.Conv2d(64,1,kernel_size=3,padding="same")
 
-        self.meshDown1 = MeshDownConv(256,512,True)
+        self.meshDown1 = MeshDownConv(128,256,True)
+        self.meshDown2 = MeshDownConv(256,512,True)
         self.meshBn = MeshDownConv(512,1024,False)
         self.meshUp1 = MeshUpConv(1024,512)
+        self.meshUp2 = MeshUpConv(512,256)
         self.conv1 = SplineConv(1024, 512,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.meshUnpool = MeshUnpool()
         self.meshPool = MeshPool()
 
     def forward(self,x):
-        start_time = time.time()
-        #down-sampling
         fe = x
         b_pool1 = self.down1(fe)
         fe = self.maxpool(b_pool1)
         b_pool2 = self.down2(fe)
         fe = self.maxpool(b_pool2)
-        b_pool3 = self.down3(fe)
-        fe = self.maxpool(b_pool3)
+        # b_pool3 = self.down3(fe)
+        # fe = self.maxpool(b_pool3)
         #b_pool4 = self.down4(fe)
         #fe = b_pool4
         # fe = self.maxpool(b_pool4)
         # print(fe.shape)
+        # with record_function("mesh_down"):
         meshes = []
         for image in fe:
             mesh = Mesh(file=image)
             meshes.append(mesh)
         meshes = np.array(meshes)
-        before_pool= self.meshDown1(meshes)
+        # start_time = time.time()
+        before_pool1 = self.meshDown1(meshes)
+        before_pool2 = self.meshDown2(meshes)
+        # end_time = time.time()
+        # print("mesh encoder time : " + str(end_time-start_time) + " seconds")
+        # with record_function("bottleneck"):
         self.meshBn(meshes)
-        meshes = self.meshUp1(meshes,before_pool)
+        # with record_function("mesh_up"):
+        meshes = self.meshUp1(meshes,before_pool2)
+        meshes = self.meshUp2(meshes,before_pool1)
+        # end_time = time.time()
+        # print("mesh decoder time : " + str(end_time-start_time) + " seconds")
         fe = []
         for mesh in meshes:
             fe.append(mesh.image)
         fe = torch.transpose(torch.stack(fe),2,1)
-        fe = fe.reshape(1,512,34,34)
+        fe = fe.reshape(1,256,66,66)
         fe = unpad(fe)
-
         #bottleneck
         # fe = self.bn(fe)
 
@@ -326,19 +336,21 @@ class TestNet(nn.Module):
         # unpool1 = self.unpool1(fe)
         # fe = torch.cat((b_pool4,fe),1)
         # fe = self.up1(fe)
-        unpool2 = self.unpool2(fe)
-        fe = torch.cat((b_pool3,unpool2),1)
-        fe = self.up2(fe)
+
+        # unpool2 = self.unpool2(fe)
+        # fe = torch.cat((b_pool3,unpool2),1)
+
         unpool3 = self.unpool3(fe)
         fe = torch.cat((b_pool2,unpool3),1)
         fe = self.up3(fe)
+
         unpool4 = self.unpool4(fe)
         fe = torch.cat((b_pool1, unpool4),1)
         fe = self.up4(fe)
+
         out = self.output(fe).squeeze(1)
-        # end_time = time.time()
-        # elapsed_time = end_time - start_time
-        # print("Elapsed time:", elapsed_time, "seconds")
+            # end_time1 = time.time()
+            # elapsed_time = end_time1 - start_time1        
         return out
 
     def __call__self(self,x):

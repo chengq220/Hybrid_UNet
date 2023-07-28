@@ -9,10 +9,8 @@ def run_test(epoch=-1):
     opt = TestOptions().parse()
     opt.serial_batches = True  # no shuffle
     dataset = DataLoader(opt)
+    # if model is None:
     model = create_model(opt)
-    # writer = Writer(opt)
-    # # test
-    # writer.reset_counter()
     accuracy = 0
     length = len(dataset)
     for i, data in enumerate(dataset):

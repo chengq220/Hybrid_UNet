@@ -8,7 +8,7 @@ from options.inference_options import InferenceOptions
 from utils.util import dice_coefficient
 import os 
 
-def predict(steps=5):
+def predict(steps=6):
     print("Running Prediction")
     opt = InferenceOptions().parse()
     resize = opt.resize
