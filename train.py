@@ -14,26 +14,28 @@ import csv
 if __name__ == '__main__':
     opt = TrainOptions().parse()    
     model = create_model(opt)
-    model.load_network("latest")
     dataset = DataLoader(opt)
     dataset_size = len(dataset)
     writer = Writer(opt)
     total_steps = 0
     best_loss = 1 
 
-    wandb.init(project="small_dataset",resume=True)
-    wandb.watch(model.net, log='all')
+    # wandb.init(project="small_dataset",resume=True)
+    # wandb.watch(model.net, log='all')
 
-    # for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
-    for epoch in range(53, opt.niter + opt.niter_decay + 1):
+    for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
         total_steps += 1
         train_loss = 0
         for i, data in enumerate(dataset):
+            s = time.time()
             model.set_input(data)
             model.optimize_parameters()
-            model.save_network('latest')
             train_loss += model.loss
-
+            e = time.time()
+            print("time passed " + str(e-s) + " seconds ")
+            exit()
+        exit()
+        model.save_network('latest')
         train_loss /= dataset_size  
         if(train_loss < best_loss):
             model.save_network('best')
@@ -42,8 +44,5 @@ if __name__ == '__main__':
         val_acc = predict(total_steps)
     
     # #model.update_learning_rate()
-    wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
-    # e = time.time()
-    # print(str(e-s) + " seconds")
-    # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10)) 
+    # wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
 

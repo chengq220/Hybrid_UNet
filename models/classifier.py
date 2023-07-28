@@ -42,11 +42,10 @@ class ClassifierModel:
         self.labels = labels.to(self.device)
         
     def forward(self):
-        # with profiler.profile(with_stack=True, profile_memory=True) as prof:
-        #     with torch.autograd.profiler.emit_nvtx():  # (Optional) To visualize the operation in NVIDIA Nsight Systems
-        #     # with torch.autograd.profiler.emit_nvtx():
+        # s = time.time()
         out = self.net(self.features)
-
+        # e = time.time()
+        # print("forward: " + str(e-s) + " seconds")
         return out
 
     def backward(self, out):
@@ -54,13 +53,17 @@ class ClassifierModel:
         self.loss.backward()
 
     def optimize_parameters(self):
-        # with profile(activities=[ProfilerActivity.CPU], record_shapes=True, use_cuda=True) as prof:
         self.optimizer.zero_grad()
-        # with record_function("forward"):
+        s = time.time()
         out = self.forward()
-        # with record_function("backward"):
+        e = time.time()
+        elapsed_time = e - s
+        print("forward time: " + str(elapsed_time)) 
+        s = time.time()   
         self.backward(out)
-        # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10)) 
+        e = time.time()
+        elapsed_time = e - s
+        print("backward time: " + str(elapsed_time))  
         self.optimizer.step()
 
 

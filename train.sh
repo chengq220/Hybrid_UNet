@@ -2,12 +2,12 @@
 
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
---name full_test_3_layer \
+--name profiling \
 --arch test \
 --loss_func dice \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
---gpu_ids 4 \
+--gpu_ids 3 \
 --batch_size 1 \
 --lr 0.00002 \
 --num_aug 20 \

@@ -294,6 +294,7 @@ class TestNet(nn.Module):
         self.meshPool = MeshPool()
 
     def forward(self,x):
+        start1 = time.time()
         fe = x
         b_pool1 = self.down1(fe)
         fe = self.maxpool(b_pool1)
@@ -349,8 +350,9 @@ class TestNet(nn.Module):
         fe = self.up4(fe)
 
         out = self.output(fe).squeeze(1)
-            # end_time1 = time.time()
-            # elapsed_time = end_time1 - start_time1        
+        end_time1 = time.time()
+        # elapsed_time = end_time1 - start1
+        # print("elapse time: " + str(elapsed_time))        
         return out
 
     def __call__self(self,x):

@@ -41,52 +41,31 @@ class MeshPool(nn.Module):
         image = mesh.image
         features = torch.transpose(torch.cat((image[mesh.edges[0, :]], image[mesh.edges[1, :]]), dim=1), 0, 1)
         queue = self.__build_queue(features, mesh.edge_counts)
-        # with profile(activities=[ProfilerActivity.CPU], record_shapes=True, use_cuda=True) as prof:
-        #     with record_function("merge_vertices"):
+        self.is_boundary = self.get_boundary(mesh)
         while mesh.vertex_count > self.__out_target:
             value, edge_id = heappop(queue)
             edge_id = int(edge_id)
             if mesh.vertex_mask[mesh.edges[1,edge_id]] and mesh.vertex_mask[mesh.edges[0,edge_id]]:
                 items = self.__pool_edge(mesh, edge_id)
-                # if items is not None:
-                #     queue = self.update_q(queue,items)
         mesh.clean_up()
-        # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10)) 
-    def __pool_edge(self, mesh, edge_id):
-        if self.is_boundary(mesh,edge_id):
-            return None
-        elif self.is_valid(mesh,edge_id):
-            return mesh.merge_vertex(edge_id)
-        else:
-            return None
 
     @staticmethod
-    def is_valid(mesh, edge_id):
-        v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
-        v_0_n = mesh.adj_matrix[:, v_0] + mesh.adj_matrix[v_0]
-        v_1_n = mesh.adj_matrix[:, v_1] + mesh.adj_matrix[v_1]
-        shared = v_0_n & v_1_n
-        return (shared.sum() == 2).item()
-
-    @staticmethod
-    def is_boundary(mesh, edge_id):
-        v_0, v_1 = mesh.vs[mesh.edges[0, edge_id]], mesh.vs[mesh.edges[1, edge_id]]  # get the spacial position of the vertex
+    def get_boundary(mesh):
+        v_0, v_1 = mesh.vs[mesh.edges[0,:]], mesh.vs[mesh.edges[1,:]]
         epsilon = mesh.epsilon
-        boundary_check = ((v_0[0] < epsilon) | (v_0[0] > 1 - epsilon) |
-                          (v_0[1] < epsilon) | (v_0[1] > 1 - epsilon) |
-                          (v_1[0] < epsilon) | (v_1[0] > 1 - epsilon) |
-                          (v_1[1] < epsilon) | (v_1[1] > 1 - epsilon))
-        return boundary_check
+        is_boundary = ((v_0[:,0] < epsilon) | (v_0[:,0] > 1 - epsilon) |
+                          (v_0[:,1] < epsilon) | (v_0[:,1] > 1 - epsilon) |
+                          (v_1[:,0] < epsilon) | (v_1[:,0] > 1 - epsilon) |
+                          (v_1[:,1] < epsilon) | (v_1[:,1] > 1 - epsilon))
+        return is_boundary
 
-    @staticmethod
-    def update_q(q, items):
-        queue = q
-        queue.extend(items)
-        heapq.heapify(queue)
-        return queue
+    def __pool_edge(self, mesh, edge_id):
+        if self.is_boundary[edge_id]:
+            return None
+        else:
+            return mesh.merge_vertex(edge_id)
 
     def __build_queue(self, features, edges_count):
-        # delete edges with smallest norm
         squared_magnitude = torch.sum(features * features, 0)
         if squared_magnitude.shape[-1] != 1:
             squared_magnitude = squared_magnitude.unsqueeze(-1)
