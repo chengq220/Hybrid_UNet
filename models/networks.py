@@ -10,7 +10,7 @@ import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
 from torch_geometric.nn import SplineConv
-from utils.util import unpad
+from utils.util import pad,unpad
 import wandb
 import time
 
@@ -287,8 +287,6 @@ class TestNet(nn.Module):
         self.meshUp1 = MeshUpConv(1024,512)
         self.meshUp2 = MeshUpConv(512,256)
         # self.conv1 = SplineConv(1024, 512,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        # self.meshUnpool = MeshUnpool()
-        # self.meshPool = MeshPool()
 
     def forward(self,x):
         fe = x
@@ -298,11 +296,17 @@ class TestNet(nn.Module):
         fe = self.maxpool(b_pool2)
 
         meshes = []
-        for image in fe:
-            mesh = Mesh(file=image)
+        adjs = []
+        images = pad(fe)
+
+        for image in images:
+            mesh = Mesh([images.shape[2],images.shape[3]])
+            adjs.append(mesh.get_adjacency())
             meshes.append(mesh)
         meshes = np.array(meshes)
-
+        adjs = torch.stack(adjs)
+        images = torch.transpose(images.reshape(images.shape[0],images.shape[1],images.shape[2]*images.shape[3]),2,1)
+        
         before_pool1 = self.meshDown1(meshes)
         before_pool2 = self.meshDown2(meshes)
 
@@ -327,7 +331,8 @@ class TestNet(nn.Module):
         fe = self.up4(fe)
 
         out = self.output(fe).squeeze(1)
-        
+        print(out.shape)
+        exit()
         return out
 
     def __call__self(self,x):

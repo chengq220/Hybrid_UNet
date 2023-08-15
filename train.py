@@ -18,8 +18,8 @@ if __name__ == '__main__':
     total_steps = 0
     best_loss = 1 
 
-    wandb.init(project="Experiment")
-    wandb.watch(model.net, log='all')
+    # wandb.init(project="Experiment")
+    # wandb.watch(model.net, log='all')
 
     for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
         total_steps += 1
@@ -28,6 +28,8 @@ if __name__ == '__main__':
             model.set_input(data)
             model.optimize_parameters()
             train_loss += model.loss
+            exit()
+        exit()
         model.save_network('latest')
         train_loss /= dataset_size   
         if(train_loss < best_loss):

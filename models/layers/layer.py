@@ -25,29 +25,31 @@ class MeshDownConv(nn.Module):
         if(pool):
             self.pool = MeshPool()
 
-    def __call__(self, meshes):
-        return self.forward(meshes)
+    def __call__(self, meshes, adjs, images):
+        return self.forward(meshes, adjs, images)
 
-    def forward(self, meshes):
+    def forward(self, meshes, adjs, images):
         before_pool = []
         #Spline Convolution
         for idx,mesh in enumerate(meshes):     
-            v_f = mesh.image
-            edges = mesh.get_undirected_edges()
+            v_f = images[idx]
+            adj = adjs[idx]
+            edges = mesh.get_undirected_edges(adj)
             edge_attribute = mesh.get_attributes(edges).cuda()
             v_f = self.conv1(v_f,edges.cuda(),edge_attribute)
             v_f = F.relu(v_f)
             v_f = self.conv2(v_f,edges.cuda(),edge_attribute)
             v_f = F.relu(v_f)
-            if self.pool is not None:
-                before_pool.append(v_f)
-                mesh.update_dictionary(edges,"edge")
-            mesh.image = v_f
+            before_pool.append(v_f)
 
         if self.pool is not None:
-            meshes = self.pool(meshes)
+            meshes, adjs, images = self.pool(meshes, adjs, images)
             before_pool = torch.stack(before_pool)
-            return before_pool
+        else:
+            meshes = meshes
+            adjs = adjs
+            before_pool = None
+        return before_pool
 
 class MeshUpConv(nn.Module):
     def __init__(self, in_channels, out_channels):
