@@ -71,7 +71,7 @@ class MeshPool(nn.Module):
                 pool_order.append(edge_id)
                 mesh.vertex_count = mesh.vertex_count - 1
         pool_order = torch.tensor(pool_order)
-        adj, update_matrix = mesh.merge_vertex2(adj, edges, pool_order, image)
+        adj, update_matrix = mesh.merge_vertex(adj, edges, pool_order, image)
         adj = adj[vertex_mask][:,vertex_mask]
         adj = adj * ~torch.eye(adj.size(0), dtype=bool) #remove self-loop
         image = image + update_matrix
