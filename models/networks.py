@@ -288,12 +288,15 @@ class TestNet(nn.Module):
         self.meshUp2 = MeshUpConv(512,256)
 
     def forward(self,x):
+        #regular rectangular down-sampling
         fe = x
         b_pool1 = self.down1(fe)
         fe = self.maxpool(b_pool1)
         b_pool2 = self.down2(fe)
         fe = self.maxpool(b_pool2)
 
+
+        #pre-processing the image into graph-related structures
         meshes = []
         adjs = []
         images = pad(fe)
@@ -305,25 +308,25 @@ class TestNet(nn.Module):
         meshes = np.array(meshes)
         adjs = torch.stack(adjs)
         
-        images = torch.transpose(images.reshape(images.shape[0],images.shape[1],images.shape[2]*images.shape[3]),2,1)
+        #reformatting the image 
+        images = images.reshape(images.shape[0],images.shape[1],images.shape[2]*images.shape[3])
+        images = torch.transpose(images,2,1)
+
+        #mesh pooling/unpooling
         before_pool1, meshes, adjs1, out = self.meshDown1(meshes, adjs, images)
         before_pool2, meshes, adjs2, out = self.meshDown2(meshes, adjs1, out)
         
         _, meshes, _ , out = self.meshBn(meshes, adjs2, out)
 
         meshes, out = self.meshUp1(meshes, adjs1, out, before_pool2)
-        print(out.shape)
         meshes, out = self.meshUp2(meshes, adjs, out, before_pool1)
-        print(out.shape)
 
-        exit()
-        fe = []
-        for mesh in meshes:
-            fe.append(mesh.image)
-        fe = torch.transpose(torch.stack(fe),2,1)
+        #post processing the image
+        fe = torch.transpose(out, 2,1)
         fe = fe.reshape(1,256,66,66)
         fe = unpad(fe)
 
+        #regular rectangular upsampling operations
         unpool3 = self.unpool3(fe)
         fe = torch.cat((b_pool2,unpool3),1)
         fe = self.up3(fe)
@@ -333,8 +336,6 @@ class TestNet(nn.Module):
         fe = self.up4(fe)
 
         out = self.output(fe).squeeze(1)
-        print(out.shape)
-        exit()
         return out
 
     def __call__self(self,x):

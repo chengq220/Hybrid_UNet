@@ -63,8 +63,8 @@ class MeshUpConv(nn.Module):
         return self.forward(meshes, adjs, images, skips)
 
     def forward(self, meshes, adjs, images, skips):
+        meshes, images = self.unpool(meshes, images)
         out_image = []
-        meshes = self.unpool(meshes, adjs, images)
         for idx,mesh in enumerate(meshes): 
             v_f = images[idx]
             adj = adjs[idx]

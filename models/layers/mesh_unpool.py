@@ -6,10 +6,10 @@ class MeshUnpool(nn.Module):
     def __init__(self):
         super(MeshUnpool, self).__init__()
 
-    def __call__(self, meshes, adjs, image):
-        return self.forward(meshes, adjs, image)
+    def __call__(self, meshes, image):
+        return self.forward(meshes, image)
 
-    def forward(self, meshes, adjs, images):
+    def forward(self, meshes, images):
         out_image = []
 
         for idx, mesh in enumerate(meshes): #iterate over each mesh
