@@ -41,15 +41,16 @@ class MeshDownConv(nn.Module):
             v_f = self.conv2(v_f,edges.cuda(),edge_attribute)
             v_f = F.relu(v_f)
             before_pool.append(v_f)
-
+        
+        before_pool = torch.stack(before_pool)
         if self.pool is not None:
-            meshes, adjs, images = self.pool(meshes, adjs, images)
-            before_pool = torch.stack(before_pool)
+            meshes, adjs, images = self.pool(meshes, adjs, before_pool)
         else:
             meshes = meshes
             adjs = adjs
+            images = before_pool
             before_pool = None
-        return before_pool
+        return before_pool, meshes, adjs, images
 
 class MeshUpConv(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -58,14 +59,16 @@ class MeshUpConv(nn.Module):
         self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
         self.unpool = MeshUnpool()
 
-    def __call__(self, meshes, skips):
-        return self.forward(meshes,skips)
+    def __call__(self, meshes, adjs, images, skips):
+        return self.forward(meshes, adjs, images, skips)
 
-    def forward(self, meshes,skips):
-        meshes = self.unpool(meshes)
+    def forward(self, meshes, adjs, images, skips):
+        out_image = []
+        meshes = self.unpool(meshes, adjs, images)
         for idx,mesh in enumerate(meshes): 
-            v_f = mesh.image
-            edge = mesh.get_undirected_edges()
+            v_f = images[idx]
+            adj = adjs[idx]
+            edge = mesh.get_undirected_edges(adj)
             edge_attribute = mesh.get_attributes(edge).cuda()
             v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
             v_f = F.relu(v_f)
@@ -74,5 +77,5 @@ class MeshUpConv(nn.Module):
             v_f = F.relu(v_f)
             v_f = self.conv2(v_f,edge.cuda(),edge_attribute)
             v_f = F.relu(v_f)
-            mesh.image = v_f
-        return meshes
+            out_image.append(v_f)
+        return meshes, torch.stack(out_image)

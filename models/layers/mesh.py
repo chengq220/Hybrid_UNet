@@ -129,6 +129,7 @@ class Mesh:
         #update vertex history
         vertex_history = self.history_data.get('vertex',[])
         vertex_history.append(self.vs)
+        self.vs = self.vs[vertex_mask]
 
         #update pool history
         pool_history = self.history_data.get('collapse_order', [])

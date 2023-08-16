@@ -59,7 +59,7 @@ class MeshPool(nn.Module):
         boundary_mask = ~self.is_boundary(mesh,edges)
 
         vertex_mask = torch.ones(image.shape[0], dtype=torch.bool)
-        pool_order = []
+        pool_indices = []
 
         while mesh.vertex_count > out_target:
             value, edge_id = heappop(queue)
@@ -68,13 +68,14 @@ class MeshPool(nn.Module):
             v_0 = edges[0,edge_id]
             if boundary_mask[edge_id] and vertex_mask[v_1] and vertex_mask[v_0]:
                 vertex_mask[v_1] = False
-                pool_order.append(edge_id)
+                pool_indices.append(edge_id)
                 mesh.vertex_count = mesh.vertex_count - 1
-        pool_order = torch.tensor(pool_order)
-        adj, update_matrix = mesh.merge_vertex(adj, edges, pool_order, image)
+        pool_indices = torch.tensor(pool_indices)
+        adj, update_matrix = mesh.merge_vertex(adj, edges, pool_indices, image)
         adj = adj[vertex_mask][:,vertex_mask]
         adj = adj * ~torch.eye(adj.size(0), dtype=bool) #remove self-loop
         image = image + update_matrix
+        pool_order = torch.stack((edges[0,pool_indices],edges[1,pool_indices]))
         mesh.update_history(vertex_mask, pool_order)
         return mesh, adj, image[vertex_mask]
 

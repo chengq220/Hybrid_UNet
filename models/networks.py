@@ -286,7 +286,6 @@ class TestNet(nn.Module):
         self.meshBn = MeshDownConv(512,1024,False)
         self.meshUp1 = MeshUpConv(1024,512)
         self.meshUp2 = MeshUpConv(512,256)
-        # self.conv1 = SplineConv(1024, 512,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
 
     def forward(self,x):
         fe = x
@@ -305,16 +304,19 @@ class TestNet(nn.Module):
             meshes.append(mesh)
         meshes = np.array(meshes)
         adjs = torch.stack(adjs)
-        images = torch.transpose(images.reshape(images.shape[0],images.shape[1],images.shape[2]*images.shape[3]),2,1)
         
-        before_pool1 = self.meshDown1(meshes)
-        before_pool2 = self.meshDown2(meshes)
+        images = torch.transpose(images.reshape(images.shape[0],images.shape[1],images.shape[2]*images.shape[3]),2,1)
+        before_pool1, meshes, adjs1, out = self.meshDown1(meshes, adjs, images)
+        before_pool2, meshes, adjs2, out = self.meshDown2(meshes, adjs1, out)
+        
+        _, meshes, _ , out = self.meshBn(meshes, adjs2, out)
 
-        self.meshBn(meshes)
+        meshes, out = self.meshUp1(meshes, adjs1, out, before_pool2)
+        print(out.shape)
+        meshes, out = self.meshUp2(meshes, adjs, out, before_pool1)
+        print(out.shape)
 
-        meshes = self.meshUp1(meshes,before_pool2)
-        meshes = self.meshUp2(meshes,before_pool1)
-    
+        exit()
         fe = []
         for mesh in meshes:
             fe.append(mesh.image)
