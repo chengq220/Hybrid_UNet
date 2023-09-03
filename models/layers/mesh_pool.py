@@ -11,76 +11,91 @@ class MeshPool(nn.Module):
         super(MeshPool, self).__init__()
         self.__multi_thread = multi_thread
         self.__meshes = None
+        self.__images = None
+        self.__adjs = None
 
-    def __call__(self, meshes):
-        return self.forward(meshes)
+    def __call__(self, meshes, adjs, images):
+        return self.forward(meshes, adjs, images)
 
-    def forward(self, meshes):
+    def forward(self, meshes, adjs, images):
         pool_threads = []
-        num_vertex_delete = meshes[0].before_pad_vertices - meshes[0].before_pad_vertices // 2
-        self.__out_target = meshes[0].vertex_count - num_vertex_delete
         self.out = []
         self.__meshes = meshes
+        self.__images = images
+        self.__adjs = adjs
+
+        #return values
+        out_mesh = []
+        out_adj = []
+        out_img = []
+
         # iterate over batch
         for mesh_index in range(len(meshes)):
             if self.__multi_thread:
                 pool_threads.append(Thread(target=self.__pool_main, args=(mesh_index,)))
                 pool_threads[-1].start()
             else:
-                self.__pool_main(mesh_index)
+                mesh, adj, img = self.__pool_main(mesh_index)
+                out_mesh.append(mesh)
+                out_adj.append(adj)
+                out_img.append(img)
+
         if self.__multi_thread:
             for mesh_index in range(len(meshes)):
                 pool_threads[mesh_index].join()
-        return self.__meshes
+        return np.asarray(out_mesh), torch.stack(out_adj), torch.stack(out_img)
 
 
-    def __pool_main(self, mesh_index):
-        mesh = self.__meshes[mesh_index]
-        mesh.initiateUpdate()
-        image = mesh.image
-        features = torch.transpose(torch.cat((image[mesh.edges[0, :]], image[mesh.edges[1, :]]), dim=1), 0, 1)
-        queue = self.__build_queue(features, mesh.edge_counts)
-        while mesh.vertex_count > self.__out_target:
+    def __pool_main(self, index):
+        mesh = self.__meshes[index]
+        image = self.__images[index]
+        adj = self.__adjs[index]
+
+        out_target = mesh.vertex_count // 2
+        edges = mesh.get_directed_edges(adj)
+
+        features = torch.transpose(torch.cat((image[edges[0, :]], image[edges[1, :]]), dim=1), 0, 1)
+        queue = self.__build_queue(features, len(edges[0]))
+
+        vertex_mask = torch.ones(image.shape[0],dtype=torch.bool)
+        pool_indices = []
+        update_matrix = torch.zeros_like(image)
+
+        while mesh.vertex_count > out_target:
             value, edge_id = heappop(queue)
             edge_id = int(edge_id)
-            if mesh.vertex_mask[mesh.edges[1,edge_id]] and mesh.vertex_mask[mesh.edges[0,edge_id]]:
-                items = self.__pool_edge(mesh, edge_id)
-                if items is not None:
-                    queue = self.update_q(queue,items)
-        mesh.clean_up()
+
+            v_0 = edges[0,edge_id]
+            v_1 = edges[1,edge_id]
+
+            if vertex_mask[edges[1,edge_id]] and vertex_mask[edges[0,edge_id]] and not self.is_boundary(mesh, edges, edge_id):
+
+                pool_indices.append(edge_id)
+                vertex_mask[v_1] = False
+                adj, update_val = mesh.merge_vertex(adj, edges, edge_id, image)
+                update_matrix[v_0] = update_val
+
+        image = image + update_matrix
+        adj = adj[vertex_mask][:,vertex_mask]
+        pool_order = torch.stack((edges[0,pool_indices],edges[1,pool_indices]))
+        mesh.update_history(vertex_mask, pool_order)
+        return mesh, adj, image[vertex_mask]
 
     def __pool_edge(self, mesh, edge_id):
         if self.is_boundary(mesh,edge_id):
             return None
-        elif self.is_valid(mesh,edge_id):
-            return mesh.merge_vertex(edge_id)
         else:
-            return None
+            return mesh.merge_vertex(edge_id)
 
     @staticmethod
-    def is_valid(mesh, edge_id):
-        v_0, v_1 = mesh.edges[0, edge_id], mesh.edges[1, edge_id]
-        v_0_n = mesh.adj_matrix[:, v_0] + mesh.adj_matrix[v_0]
-        v_1_n = mesh.adj_matrix[:, v_1] + mesh.adj_matrix[v_1]
-        shared = v_0_n & v_1_n
-        return (shared.sum() == 2).item()
-
-    @staticmethod
-    def is_boundary(mesh, edge_id):
-        v_0, v_1 = mesh.vs[mesh.edges[0, edge_id]], mesh.vs[mesh.edges[1, edge_id]]  # get the spacial position of the vertex
+    def is_boundary(mesh, edges, edge_id):
+        v_0, v_1 = mesh.vs[edges[0, edge_id]], mesh.vs[edges[1, edge_id]]  # get the spacial position of the vertex
         epsilon = mesh.epsilon
         boundary_check = ((v_0[0] < epsilon) | (v_0[0] > 1 - epsilon) |
                           (v_0[1] < epsilon) | (v_0[1] > 1 - epsilon) |
                           (v_1[0] < epsilon) | (v_1[0] > 1 - epsilon) |
                           (v_1[1] < epsilon) | (v_1[1] > 1 - epsilon))
         return boundary_check
-
-    @staticmethod
-    def update_q(q, items):
-        queue = q
-        queue.extend(items)
-        heapq.heapify(queue)
-        return queue
 
     def __build_queue(self, features, edges_count):
         # delete edges with smallest norm

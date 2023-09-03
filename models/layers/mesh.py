@@ -1,35 +1,31 @@
 import torch
 import numpy as np
-# from models.layers.mesh_pool import MeshPool
-from utils.util import pad
+from torch import nn
 
 
 class Mesh:
-    def __init__(self, file=None):
-        self.before_pad_vertices = file.shape[1] * file.shape[2]
-        file = pad(file)
-        self.image = torch.transpose(file.view(file.shape[0],file.shape[1]*file.shape[2]),0,1)
-        self.update_matrix = None
-        self.epsilon = self.calcEpsilon(file.shape[1],file.shape[2])
+    def __init__(self, shape):
+        self.shape = shape
+        self.epsilon = self.calcEpsilon(shape[0], shape[1])
+        self.vs = None
         self.vertex_count = None
-        self.vs, self.faces = self.__fill_mesh(file.shape[1],file.shape[2])
-        #return the directed edges in the coo format
-        self.edges, self.edge_counts = self.__get_edges(self.faces)
-        self.adj_matrix = self.__adjacency(self.edges)
-        # self.neighbor = self.compute_neighbor()
-        self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
-        self.collapse_order = []
         self.history_data = {
             'vertex': [],
             'vertex_mask': [],
             'collapse_order': [],
-            'edge':[]
         }
 
-    #create a mesh
+    def get_adjacency(self):
+        self.vs, faces = self.__fill_mesh(self.shape[0],self.shape[1])
+        self.vertex_count = (self.shape[0]-2) * (self.shape[1]-2)
+        edges, edge_counts = self.__get_edges(faces)
+        num_nodes = edges.max().item() + 1
+        adj_matrix = torch.sparse_coo_tensor(edges, torch.ones(edges.size(1), dtype=torch.bool),
+                                             size=(num_nodes, num_nodes))
+        return adj_matrix.to_dense()
+
     def __fill_mesh(self,length, width):
         size = length * width
-        self.vertex_count = size
         # The vertices position of the regular triangular mesh
         # h is constant since image is 2D
 
@@ -85,96 +81,60 @@ class Mesh:
                     edge2key[edge] = edges_count
                     edges.append(list(edge))
                     edges_count += 1
-        d_e = np.asarray(edges,dtype=np.int64)
-        edges = torch.stack((torch.from_numpy(d_e[:, 0]), torch.from_numpy(d_e[:, 1])))
-        return edges, edges.shape[1]
+        d_e = torch.tensor(edges,dtype=torch.int64)
+        edge = torch.stack((d_e[:, 0], d_e[:, 1]))
+        edge = torch.cat((edge, torch.flip(edge, dims=[0])),dim=1)
+        return edge, edge.shape[1]
 
-    #Generate adjacency matrix give edges in coo format
-    def __adjacency(self,edges):
-        num_nodes = edges.max().item() + 1
-        adj_matrix = torch.sparse_coo_tensor(edges, torch.ones(edges.size(1),dtype=torch.bool), size=(num_nodes, num_nodes))
-        adj_matrix = adj_matrix.to_dense()
-        return adj_matrix
+    def get_attributes(self,u_e):
+        v_1 = self.vs[u_e[0, :]]
+        v_2 = self.vs[u_e[1, :]]
+        return v_1-v_2
 
-    #update the edges stored in the mesh
-    def __update_edges(self):
-        edges = self.adj_matrix.nonzero()
-        edges = torch.stack([edges[:, 0],edges[:,1]],dim=0)
+    @staticmethod
+    def get_undirected_edges(adj):
+        edges = adj.nonzero()
+        edges = torch.stack([edges[:, 0], edges[:, 1]], dim=0)
         return edges
 
-    #the edge stored is directed, this gives the undirected edges
-    def get_undirected_edges(self):
-        edge_flipped = torch.stack((self.edges[1, :], self.edges[0, :]))
-        u_e = torch.cat((self.edges,edge_flipped),dim=1)
-        return u_e
+    @staticmethod
+    def get_directed_edges(adj):
+        directed = torch.triu(adj)
+        edges = directed.nonzero()
+        edges = torch.stack([edges[:, 0], edges[:, 1]], dim=0)
+        return edges
 
-    #calculate the attributes in 2d space of each edges
-    def get_attributes(self,u_e):
-        feature = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
-        return feature
-
-    #collapse the two vertices together and update the matrix 
-    def merge_vertex(self,edge_id):
-        # start_time = time.time()
-        v_0, v_1 = self.edges[0,edge_id], self.edges[1,edge_id]
+    # Merging vertices
+    def merge_vertex(self, adj, edges, edge_id, image):
+        v_0, v_1 = edges[0,edge_id], edges[1,edge_id]
         
-        max_tensor = torch.max(self.image[v_0], self.image[v_1])
-        self.update_matrix[v_0] = max_tensor - self.image[v_0]
+        max_tensor = torch.max(image[v_0], image[v_1])
+        update_val = max_tensor - image[v_0]
         
-        neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
+        neighbors = torch.nonzero(adj[v_1]).squeeze(1)
         valid_neighbors = neighbors[neighbors != v_0]
 
-        # Update the adjacency matrix
-        # print(valid_neighbors)
+        adj[:, v_1] = False
+        adj[v_1,:] = False
+        adj[v_0, valid_neighbors] = True
 
-        self.adj_matrix[:, v_1] = False
-        self.adj_matrix[v_1,:] = False
-        self.adj_matrix[v_0, valid_neighbors] = True
-
-        # new_edges = v_0.repeat(valid_neighbors.size(0))
-        # new_edges = torch.stack((new_edges, valid_neighbors))
-        # features = torch.cat((self.image[new_edges[0]],self.image[new_edges[1]]),dim=1)
-        # squared_magnitude = torch.sum(features * features, 1)
-        # edge_ids = torch.arange(self.edge_counts, self.edge_counts+len(features), device=squared_magnitude.device, dtype=torch.float32)
-        # self.edges = torch.cat((self.edges,new_edges),dim=1)
-        # self.edge_counts += new_edges[0].size(0)
-        # heap_items = torch.stack((squared_magnitude, edge_ids),dim=1).tolist()
-
-        self.vertex_mask[v_1] = False
+        self.vs[v_0] = (self.vs[v_0] + self.vs[v_1]) / 2
         self.vertex_count = self.vertex_count - 1
-        self.collapse_order.append(edge_id)
 
-        # return heap_items
-        return None
-
-    #clean up the adjacency matrix (vertex/edges) pooled
-    def clean_up(self):
-        self.adj_matrix = self.adj_matrix[self.vertex_mask][:, self.vertex_mask]
-        self.image = self.image + self.update_matrix
-        self.image = self.image[self.vertex_mask]
-        self.update_matrix = torch.zeros_like(self.image)
-        self.update_history()
-        self.vs = self.vs[self.vertex_mask]
-        self.edges = self.__update_edges()
-        self.edge_counts = self.edges.shape[1]
-        self.vertex_mask = torch.ones(self.vertex_count, dtype=torch.bool)
-        self.collapse_order = []
-
-    def initiateUpdate(self):
-        self.update_matrix = torch.zeros_like(self.image)
+        return adj, update_val
 
     #update the dictionary that contains all the information
-    def update_history(self):
+    def update_history(self, vertex_mask, pool_order):
         #update vertex mask history
         v_mask_history = self.history_data.get('vertex_mask', [])
-        v_mask_history.append(self.vertex_mask)
+        v_mask_history.append(vertex_mask)
 
         #update vertex history
         vertex_history = self.history_data.get('vertex',[])
         vertex_history.append(self.vs)
+        self.vs = self.vs[vertex_mask]
 
         #update pool history
-        pool_order = torch.stack((self.edges[0,self.collapse_order],self.edges[1,self.collapse_order]))
         pool_history = self.history_data.get('collapse_order', [])
         pool_history.append(pool_order)
 
@@ -182,19 +142,12 @@ class Mesh:
         self.history_data['collapse_order'] = pool_history
         self.history_data['vertex'] = vertex_history
 
-    #update dictionary with informations like edge connectivity and vertex values
-    def update_dictionary(self,list,category):
-        history = self.history_data.get(category,[])
-        history.append(list)
-        self.history_data[category] = history
-
     #get the information needed for the unpool operation
     def unroll(self):
-        vertex = self.history_data['vertex'].pop()
         vertex_mask = self.history_data['vertex_mask'].pop()
         pool_order = self.history_data['collapse_order'].pop()
-        edges = self.history_data['edge'].pop()
-        return vertex, vertex_mask, pool_order, edges
+        self.vs = self.history_data['vertex'].pop()
+        return vertex_mask, pool_order
 
     @staticmethod
     def calcEpsilon(length,width):

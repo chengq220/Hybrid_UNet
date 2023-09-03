@@ -10,7 +10,7 @@ import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
 from torch_geometric.nn import SplineConv
-from utils.util import unpad
+from utils.util import pad,unpad
 import wandb
 import time
 
@@ -61,6 +61,8 @@ def define_classifier(ncf, classes, opt, gpu_ids, arch):
         mesh_up = mesh_down[::-1]
         
         net = HybridUnet(classes,rec_down,rec_up,mesh_down,mesh_up)
+    elif arch == 'test':
+        net = TestNet()
     else:
         raise NotImplementedError('Encoder model name [%s] is not recognized' % arch)
     return init_net(net, gpu_ids)
@@ -255,3 +257,81 @@ class MeshDecoder(nn.Module):
 
     def __call__(self, x, encoder_outs):
         return self.forward(x, encoder_outs)
+
+class TestNet(nn.Module):
+    """UNET implementation 
+    """
+    def __init__(self):
+        super(TestNet,self).__init__()
+        self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
+        self.down1 = recConvBlock(3,64,3)
+        self.down2 = recConvBlock(64,128,3)
+
+        self.unpool3 = nn.ConvTranspose2d(256,128,kernel_size=2,stride=2)
+        self.up3 = recConvBlock(256,128,3)
+        self.unpool4 = nn.ConvTranspose2d(128,64,kernel_size=2,stride=2)
+        self.up4 = recConvBlock(128,64,3)
+
+        self.output = nn.Conv2d(64,1,kernel_size=3,padding="same")
+
+        self.meshDown1 = MeshDownConv(128,256,True)
+        self.meshDown2 = MeshDownConv(256,512,True)
+        self.meshBn = MeshDownConv(512,1024,False)
+        self.meshUp1 = MeshUpConv(1024,512)
+        self.meshUp2 = MeshUpConv(512,256)
+
+    def forward(self,x):
+        #regular rectangular down-sampling
+        fe = x
+        b_pool1 = self.down1(fe)
+        fe = self.maxpool(b_pool1)
+        b_pool2 = self.down2(fe)
+        fe = self.maxpool(b_pool2)
+
+        #pre-processing the image into graph-related structures
+        meshes = []
+        adjs = []
+        images = pad(fe)
+
+        for image in images:
+            mesh = Mesh([images.shape[2],images.shape[3]])
+            adjs.append(mesh.get_adjacency())
+            meshes.append(mesh)
+
+        meshes = np.array(meshes)
+        adjs = torch.stack(adjs)
+        
+        #reformatting the image 
+        images = images.reshape(images.shape[0],images.shape[1],images.shape[2]*images.shape[3])
+        images = torch.transpose(images,2,1)
+
+        #mesh pooling/unpooling
+        before_pool1, meshes, adjs1, out = self.meshDown1(meshes, adjs, images)
+        before_pool2, meshes, adjs2, out = self.meshDown2(meshes, adjs1, out)
+
+        _, meshes, _ , out = self.meshBn(meshes, adjs2, out)
+       
+        meshes, out = self.meshUp1(meshes, adjs1, out, before_pool2)
+        meshes, out = self.meshUp2(meshes, adjs, out, before_pool1)
+      
+        #post processing the image
+        fe = torch.transpose(out,2,1)
+        fe = fe.reshape(1,256,66,66)
+        fe = unpad(fe)
+
+        #regular rectangular upsampling operations
+        unpool3 = self.unpool3(fe)
+        fe = torch.cat((b_pool2,unpool3),1)
+        fe = self.up3(fe)
+
+        unpool4 = self.unpool4(fe)
+        fe = torch.cat((b_pool1, unpool4),1)
+        fe = self.up4(fe)
+
+        out = self.output(fe).squeeze(1)
+        print(out.shape)
+        exit()
+        return out
+
+    def __call__self(self,x):
+        return self.forward(x)

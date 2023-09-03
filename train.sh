@@ -2,8 +2,8 @@
 
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
---name a1_hybrid \
---arch hybrid \
+--name ChangeKernelSize \
+--arch test \
 --loss_func dice \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
