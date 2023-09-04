@@ -124,28 +124,14 @@ class Mesh:
         neighbors = torch.cat((torch.nonzero(self.adj_matrix[v_1]).squeeze(1),torch.nonzero(self.adj_matrix[:,v_1]).squeeze(1)))
         valid_neighbors = neighbors[neighbors != v_0]
 
-        # Update the adjacency matrix
-        # print(valid_neighbors)
-
         self.adj_matrix[:, v_1] = False
         self.adj_matrix[v_1,:] = False
         self.adj_matrix[v_0, valid_neighbors] = True
 
-        # new_edges = v_0.repeat(valid_neighbors.size(0))
-        # new_edges = torch.stack((new_edges, valid_neighbors))
-        # features = torch.cat((self.image[new_edges[0]],self.image[new_edges[1]]),dim=1)
-        # squared_magnitude = torch.sum(features * features, 1)
-        # edge_ids = torch.arange(self.edge_counts, self.edge_counts+len(features), device=squared_magnitude.device, dtype=torch.float32)
-        # self.edges = torch.cat((self.edges,new_edges),dim=1)
-        # self.edge_counts += new_edges[0].size(0)
-        # heap_items = torch.stack((squared_magnitude, edge_ids),dim=1).tolist()
-
         self.vertex_mask[v_1] = False
         self.vertex_count = self.vertex_count - 1
+        self.before_pad_vertices = self.before_pad_vertices - 1
         self.collapse_order.append(edge_id)
-
-        # return heap_items
-        return None
 
     #clean up the adjacency matrix (vertex/edges) pooled
     def clean_up(self):

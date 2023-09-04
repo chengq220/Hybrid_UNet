@@ -17,8 +17,6 @@ class MeshPool(nn.Module):
 
     def forward(self, meshes):
         pool_threads = []
-        num_vertex_delete = meshes[0].before_pad_vertices - meshes[0].before_pad_vertices // 2
-        self.__out_target = meshes[0].vertex_count - num_vertex_delete
         self.out = []
         self.__meshes = meshes
         # iterate over batch
@@ -36,17 +34,16 @@ class MeshPool(nn.Module):
 
     def __pool_main(self, mesh_index):
         mesh = self.__meshes[mesh_index]
+        out_target = mesh.before_pad_vertices // 2
         mesh.initiateUpdate()
         image = mesh.image
         features = torch.transpose(torch.cat((image[mesh.edges[0, :]], image[mesh.edges[1, :]]), dim=1), 0, 1)
         queue = self.__build_queue(features, mesh.edge_counts)
-        while mesh.vertex_count > self.__out_target:
+        while mesh.before_pad_vertices > out_target:
             value, edge_id = heappop(queue)
             edge_id = int(edge_id)
             if mesh.vertex_mask[mesh.edges[1,edge_id]] and mesh.vertex_mask[mesh.edges[0,edge_id]]:
-                items = self.__pool_edge(mesh, edge_id)
-                if items is not None:
-                    queue = self.update_q(queue,items)
+                self.__pool_edge(mesh, edge_id)
         mesh.clean_up()
 
     def __pool_edge(self, mesh, edge_id):
@@ -75,12 +72,6 @@ class MeshPool(nn.Module):
                           (v_1[1] < epsilon) | (v_1[1] > 1 - epsilon))
         return boundary_check
 
-    @staticmethod
-    def update_q(q, items):
-        queue = q
-        queue.extend(items)
-        heapq.heapify(queue)
-        return queue
 
     def __build_queue(self, features, edges_count):
         # delete edges with smallest norm
