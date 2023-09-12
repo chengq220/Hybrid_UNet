@@ -66,6 +66,8 @@ class MeshUpConv(nn.Module):
             edge = mesh.get_undirected_edges()
             edge_attribute = mesh.get_attributes(edge).cuda()
             v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
+            # print(self.conv1.weight.shape)
+            # exit()
             v_f = F.relu(v_f)
             v_f = torch.cat((v_f,skips[idx]),1)
             v_f = self.conv1(v_f,edge.cuda(),edge_attribute)

@@ -319,8 +319,6 @@ class TestNet(nn.Module):
         fe = self.up4(fe)
 
         out = self.output(fe).squeeze(1)
-        print(out.shape)
-        exit()
         return out
 
     def __call__self(self,x):
