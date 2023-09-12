@@ -23,3 +23,9 @@ def pad(image):
 #takes in a batch of meshes
 def unpad(padded_image):
     return padded_image[:, :, 1:-1, 1:-1]
+
+def visualizePosition(mesh,name,vertex):
+    v = mesh.vs
+    plt.scatter(v[:, 0]*5, v[:, 1]*5, s=2)
+    plt.scatter(v[vertex, 0]*5, v[vertex, 1]*5, color="red", s=10)
+    plt.savefig(name + '.png')
