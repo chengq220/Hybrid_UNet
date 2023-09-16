@@ -296,10 +296,14 @@ class TestNet(nn.Module):
         meshes = np.array(meshes)
 
         before_pool1 = self.meshDown1(meshes)
+        print(meshes[0].image)
         before_pool2 = self.meshDown2(meshes)
-
+        print(meshes[0].image)
         self.meshBn(meshes)
+        print(meshes[0].image)
+        exit()
 
+        #unpooling is the problem here #######################
         meshes = self.meshUp1(meshes,before_pool2)
         meshes = self.meshUp2(meshes,before_pool1)
 

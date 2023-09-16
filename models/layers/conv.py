@@ -99,7 +99,7 @@ class SplineConv(MessagePassing):
         out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=size)
 
         x_r = x[1]
-        if x_r is not None and self.root_weight:
+        if x_r is not None and self.root_weight: ##resulting in error for some reason
             out = out + self.lin(x_r)
 
         if self.bias is not None:
@@ -111,6 +111,7 @@ class SplineConv(MessagePassing):
     def message(self, x_j: Tensor, edge_attr: Tensor) -> Tensor:
         data = spline_basis(edge_attr, self.kernel_size, self.is_open_spline,
                             self.degree)
+        # print(data)
         return spline_weighting(x_j, self.weight, *data)
 
     @torch.no_grad()

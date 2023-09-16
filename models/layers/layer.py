@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import SplineConv
 import torch.nn.functional as F
+from models.test.testing import checkVertexCoordinateBound, checkEdgeBound
 
 
 def recConvBlock(in_channel,out_channel,kernel):
@@ -19,8 +20,8 @@ def recConvBlock(in_channel,out_channel,kernel):
 class MeshDownConv(nn.Module):
     def __init__(self, in_channels, out_channels, pool):
         super(MeshDownConv, self).__init__()
-        self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[6,6],degree=2).cuda()
+        self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[6,6],degree=2).cuda()
         self.pool = None
         if(pool):
             self.pool = MeshPool()
@@ -35,6 +36,10 @@ class MeshDownConv(nn.Module):
             v_f = mesh.image
             edges = mesh.get_undirected_edges()
             edge_attribute = mesh.get_attributes(edges).cuda()
+            #### Test cases
+            checkVertexCoordinateBound(mesh)
+            checkEdgeBound(mesh)
+            ####
             v_f = self.conv1(v_f,edges.cuda(),edge_attribute)
             v_f = F.relu(v_f)
             v_f = self.conv2(v_f,edges.cuda(),edge_attribute)
@@ -52,8 +57,8 @@ class MeshDownConv(nn.Module):
 class MeshUpConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(MeshUpConv, self).__init__()
-        self.conv1 = SplineConv(in_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv1 = SplineConv(in_channels, out_channels,dim=2,kernel_size=[6,6],degree=2).cuda()
+        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[6,6],degree=2).cuda()
         self.unpool = MeshUnpool()
 
     def __call__(self, meshes, skips):

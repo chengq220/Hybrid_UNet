@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch_geometric.nn import SplineConv
+from models.test.testing import checkVertexCoordinateBound, checkEdgeBound
 
 class MeshUnpool(nn.Module):
     def __init__(self):
@@ -16,12 +17,17 @@ class MeshUnpool(nn.Module):
             vertex, mask, order, edge = mesh.unroll()
             v_f = torch.zeros(mask.shape[0],img.shape[1]).to(img.device)
             v_f[mask] = img
+            
             #reconstruct the image in reverse order
             for idx in range(len(order[0])):
                 t = order[1, len(order[0]) - idx - 1]
                 f = order[0, len(order[0]) - idx - 1]
                 v_f[t] = v_f[f]
-            mesh.image = (v_f)
+            mesh.image = v_f
             mesh.edge = edge
             mesh.vertex = vertex
+            ###Testing to make sure all parameter are within acceptable range
+            checkVertexCoordinateBound(mesh)
+            checkEdgeBound(mesh)
+            ###
         return meshes
