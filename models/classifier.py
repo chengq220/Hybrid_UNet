@@ -3,6 +3,7 @@ import torch.nn as nn
 from . import networks
 from os.path import join
 from torchmetrics import Dice
+import matplotlib.pyplot as plt
 
 class ClassifierModel:
     """ Class for training Model weights
@@ -13,6 +14,7 @@ class ClassifierModel:
         self.is_train = opt.is_train
         self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')
         self.save_dir = join(opt.checkpoints_dir, opt.name)
+        self.acc_hist = []
         self.optimizer = None
         self.features = None
         self.labels = None
@@ -45,6 +47,7 @@ class ClassifierModel:
 
     def backward(self, out):
         self.loss = self.criterion(out, self.labels.float())
+        self.acc_hist.append(self.loss)
         self.loss.backward()
 
     def optimize_parameters(self):
@@ -84,6 +87,20 @@ class ClassifierModel:
         self.scheduler.step()
         lr = self.optimizer.param_groups[0]['lr']
         print('learning rate = %.7f' % lr)
+
+    def clear_history(self):
+        self.acc_hist = []
+    
+    def export_box(self):
+        data = torch.stack(self.acc_hist).squeeze().cpu().detach()
+        plt.boxplot(data)
+        # Add labels and title
+        plt.xlabel("Epoch")
+        plt.ylabel("Dice Score")
+
+        # Save the boxplot as a JPEG image
+        plt.savefig(self.opt.export_folder + '/boxplot.jpg', format='jpeg')
+
 
     ################################################################################
     # Helper Functions

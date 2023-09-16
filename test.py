@@ -5,14 +5,10 @@ from utils.writer import Writer
 
 
 def run_test(epoch=-1):
-    # print('Running Test')
     opt = TestOptions().parse()
     opt.serial_batches = True  # no shuffle
     dataset = DataLoader(opt)
     model = create_model(opt)
-    # writer = Writer(opt)
-    # # test
-    # writer.reset_counter()
     accuracy = 0
     length = len(dataset)
     for i, data in enumerate(dataset):
