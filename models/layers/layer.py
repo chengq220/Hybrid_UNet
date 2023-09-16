@@ -19,8 +19,8 @@ def recConvBlock(in_channel,out_channel,kernel):
 class MeshDownConv(nn.Module):
     def __init__(self, in_channels, out_channels, pool):
         super(MeshDownConv, self).__init__()
-        self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv1 = SplineConv(in_channels,out_channels,dim=2, kernel_size=[6,6],degree=2).cuda()
+        self.conv2 = SplineConv(out_channels, out_channels, dim=2 ,kernel_size=[6,6],degree=2).cuda()
         self.pool = None
         if(pool):
             self.pool = MeshPool()
@@ -52,8 +52,8 @@ class MeshDownConv(nn.Module):
 class MeshUpConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(MeshUpConv, self).__init__()
-        self.conv1 = SplineConv(in_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
-        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[3,3],degree=2,aggr='add').cuda()
+        self.conv1 = SplineConv(in_channels, out_channels,dim=2,kernel_size=[6,6],degree=2).cuda()
+        self.conv2 = SplineConv(out_channels, out_channels,dim=2,kernel_size=[6,6],degree=2).cuda()
         self.unpool = MeshUnpool()
 
     def __call__(self, meshes, skips):
@@ -66,8 +66,6 @@ class MeshUpConv(nn.Module):
             edge = mesh.get_undirected_edges()
             edge_attribute = mesh.get_attributes(edge).cuda()
             v_f = self.conv1(v_f,edge.cuda(),edge_attribute)
-            # print(self.conv1.weight.shape)
-            # exit()
             v_f = F.relu(v_f)
             v_f = torch.cat((v_f,skips[idx]),1)
             v_f = self.conv1(v_f,edge.cuda(),edge_attribute)

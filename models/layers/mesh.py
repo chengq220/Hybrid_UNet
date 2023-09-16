@@ -110,8 +110,12 @@ class Mesh:
 
     #calculate the attributes in 2d space of each edges
     def get_attributes(self,u_e):
-        feature = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
-        return feature
+        edge_attr = self.vs[u_e[1, :]] - self.vs[u_e[0, :]]
+        #normalize attribute
+        min_value = edge_attr.min()
+        max_value = edge_attr.max()
+        edge_attr = (edge_attr - min_value) / (max_value - min_value)
+        return edge_attr
 
     #collapse the two vertices together and update the matrix 
     def merge_vertex(self,edge_id):
