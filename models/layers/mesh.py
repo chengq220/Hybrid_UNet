@@ -89,7 +89,12 @@ class Mesh:
     def get_attributes(self,u_e):
         v_1 = self.vs[u_e[0, :]]
         v_2 = self.vs[u_e[1, :]]
-        return v_1-v_2
+        edge_attr = v_1 - v_2
+        #normalize attribute
+        min_value = edge_attr.min()
+        max_value = edge_attr.max()
+        edge_attr = (edge_attr - min_value) / (max_value - min_value)
+        return edge_attr
 
     @staticmethod
     def get_undirected_edges(adj):

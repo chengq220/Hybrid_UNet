@@ -10,9 +10,11 @@ import numpy as np
 from models.loss import DiceLoss,DiceBCELoss
 from torch.nn import BCEWithLogitsLoss
 from torch_geometric.nn import SplineConv
+import torch_geometric
 from utils.util import pad,unpad
 import wandb
 import time
+from models.test.testing import checkVertexCoordinateBound, checkEdgeBound
 
 
 ###############################################################################
@@ -308,9 +310,9 @@ class TestNet(nn.Module):
         #mesh pooling/unpooling
         before_pool1, meshes, adjs1, out = self.meshDown1(meshes, adjs, images)
         before_pool2, meshes, adjs2, out = self.meshDown2(meshes, adjs1, out)
-
+        
         _, meshes, _ , out = self.meshBn(meshes, adjs2, out)
-       
+
         meshes, out = self.meshUp1(meshes, adjs1, out, before_pool2)
         meshes, out = self.meshUp2(meshes, adjs, out, before_pool1)
       
