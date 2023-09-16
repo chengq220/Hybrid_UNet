@@ -11,10 +11,14 @@ def run_test(epoch=-1):
     model = create_model(opt)
     accuracy = 0
     length = len(dataset)
+    acc_hist = []
     for i, data in enumerate(dataset):
         model.set_input(data)
-        accuracy += model.test()
-    return (accuracy/length)
+        curr_acc = model.test()
+        acc_hist.append(curr_acc)
+        accuracy += curr_acc
+
+    return (accuracy/length), acc_hist
 
 
 if __name__ == '__main__':

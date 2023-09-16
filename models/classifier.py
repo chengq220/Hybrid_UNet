@@ -14,7 +14,7 @@ class ClassifierModel:
         self.is_train = opt.is_train
         self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')
         self.save_dir = join(opt.checkpoints_dir, opt.name)
-        self.acc_hist = []
+        self.train_acc = []
         self.optimizer = None
         self.features = None
         self.labels = None
@@ -47,7 +47,7 @@ class ClassifierModel:
 
     def backward(self, out):
         self.loss = self.criterion(out, self.labels.float())
-        self.acc_hist.append(self.loss)
+        self.train_acc.append(self.loss)
         self.loss.backward()
 
     def optimize_parameters(self):
@@ -89,13 +89,15 @@ class ClassifierModel:
         print('learning rate = %.7f' % lr)
 
     def clear_history(self):
-        self.acc_hist = []
+        self.train_acc = []
+        self.test_acc = []
     
-    def export_box(self):
-        data = torch.stack(self.acc_hist).squeeze().cpu().detach()
-        plt.boxplot(data)
-        # Add labels and title
-        plt.xlabel("Epoch")
+    def export_box(self,test_acc):
+        fig, ax = plt.subplots()
+        data = torch.stack(self.train_acc).squeeze().cpu().detach()
+        data1 = torch.stack(test_acc).squeeze().cpu().detach()
+        box1 = ax.boxplot(data, positions=[1], labels=['Train'])
+        box2 = ax.boxplot(data1, positions=[2], labels=['Test'])
         plt.ylabel("Dice Score")
 
         # Save the boxplot as a JPEG image

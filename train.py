@@ -28,10 +28,6 @@ if __name__ == '__main__':
             model.set_input(data)
             model.optimize_parameters()
             train_loss += model.loss
-        model.clear_history()
-        
-        if(epoch%10 == 0): #export boxplot for the epoch
-            model.export_box()
 
         train_loss /= dataset_size  
         model.save_network('latest') 
@@ -39,8 +35,11 @@ if __name__ == '__main__':
             model.save_network('best')
 
         best_loss = train_loss
-        test_acc = run_test(epoch)
+        test_acc, acc_history = run_test(epoch)
         val_acc = predict(total_steps)
+        if(epoch%10 == 0): #export boxplot for the epoch
+            model.export_box()
+        model.clear_history()
 
         model.update_learning_rate()
         wandb.log({"Validation accuracy":val_acc, "loss": train_loss, "test_acc": test_acc})
