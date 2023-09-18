@@ -2,7 +2,7 @@
 
 python train.py \
 --dataroot datasets/CVC-ClinicDB \
---name test \
+--name fix_kernel \
 --arch test \
 --loss_func dice \
 --resize 256 256 \

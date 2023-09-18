@@ -38,7 +38,7 @@ if __name__ == '__main__':
         test_acc, acc_history = run_test(epoch)
         val_acc = predict(total_steps)
         if(epoch%10 == 0): #export boxplot for the epoch
-            model.export_box()
+            model.export_box(acc_history)
         model.clear_history()
 
         model.update_learning_rate()
