@@ -7,7 +7,7 @@ python train.py \
 --loss_func dice \
 --resize 256 256 \
 --ncf 64 128 256 512 1024 \
---gpu_ids 3 \
+--gpu_ids 7 \
 --batch_size 1 \
 --lr 0.00001 \
 --num_aug 20 \
