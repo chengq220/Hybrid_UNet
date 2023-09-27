@@ -47,7 +47,7 @@ class ClassifierModel:
 
     def backward(self, out):
         self.loss = self.criterion(out, self.labels.float())
-        self.train_acc.append(self.loss)
+        self.train_acc.append(1-self.loss) #1 ==> 1 - diceloss = dice
         self.loss.backward()
 
     def optimize_parameters(self):

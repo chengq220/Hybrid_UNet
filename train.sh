@@ -11,8 +11,8 @@ python train.py \
 --batch_size 1 \
 --lr 0.00001 \
 --num_aug 20 \
---niter 175 \
---niter_decay 175 \
+--niter 125 \
+--niter_decay 125 \
 --export_folder predictions \
 --pred datasets/CVC-ClinicDB/validation/1.png \
 --label datasets/CVC-ClinicDB/GroundTruth/1.png \
